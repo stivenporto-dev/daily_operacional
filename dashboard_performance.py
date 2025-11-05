@@ -3,7 +3,7 @@ import pandas as pd
 from st_aggrid import AgGrid, GridOptionsBuilder
 from datetime import date, timedelta
 import math
-import os
+
 
 # ===============================
 # CONFIGURAÇÃO DA PÁGINA
@@ -43,7 +43,6 @@ st.title("📊 Daily Operacional")
 st.markdown('</div>', unsafe_allow_html=True)
 st.markdown('<div class="content">', unsafe_allow_html=True)
 
-
 # ===============================
 # FUNÇÕES AUXILIARES
 # ===============================
@@ -59,7 +58,6 @@ def converter_data_robusta(x):
         except:
             continue
     return pd.to_datetime(x, dayfirst=True, errors="coerce")
-
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def carregar_daily_google(gids, url_base):
@@ -78,40 +76,11 @@ def carregar_daily_google(gids, url_base):
         abas.append(df)
     return pd.concat(abas, ignore_index=True)
 
-
 @st.cache_data(ttl=3600, show_spinner=False)
-def carregar_nucleos():
-    """
-    Carrega dados dos núcleos do arquivo local
-    """
-    try:
-        # Lista de possíveis locais do arquivo
-        possible_paths = [
-            "dBase Nucleos.xlsx",  # Na raiz do projeto
-            "./dBase Nucleos.xlsx",  # Na raiz (caminho relativo)
-            "data/dBase Nucleos.xlsx",  # Em pasta data/
-            "src/dBase Nucleos.xlsx",  # Em pasta src/
-        ]
-
-        # Tenta carregar de arquivo local
-        for file_path in possible_paths:
-            try:
-                if os.path.exists(file_path):
-                    df_nuc = pd.read_excel(file_path)
-                    df_nuc["Chave"] = df_nuc["Empresa"].astype(str) + df_nuc["Setor"].astype(str)
-                    st.sidebar.success(f"✅ Dados carregados: {file_path}")
-                    return df_nuc
-            except Exception as e:
-                continue
-
-        # Se não encontrou em nenhum local
-        st.error(f"❌ Arquivo 'dBase Nucleos.xlsx' não encontrado. Verifique se o arquivo está no repositório.")
-        return None
-
-    except Exception as e:
-        st.error(f"❌ Erro ao carregar dados dos núcleos: {str(e)}")
-        return None
-
+def carregar_nucleos(xls_path):
+    df_nuc = pd.read_excel(xls_path)
+    df_nuc["Chave"] = df_nuc["Empresa"].astype(str) + df_nuc["Setor"].astype(str)
+    return df_nuc
 
 def formatar_contagem(valor, tipo):
     if pd.isna(valor):
@@ -140,7 +109,6 @@ def formatar_contagem(valor, tipo):
         return f"{valor:.3f}".rstrip("0").rstrip(".")
     return str(valor)
 
-
 def calcular_acum_ultimo_dia(df, penalidade):
     # identifica colunas de data (exclui colunas fixas)
     cols_datas = [c for c in df.columns if c not in ["Regional", "Nucleo", "Meta", "Acum"]]
@@ -163,7 +131,6 @@ def calcular_acum_ultimo_dia(df, penalidade):
 
     return df
 
-
 # ===============================
 # FUNÇÕES DE COR E FORMATAÇÃO DE META
 # ===============================
@@ -172,7 +139,6 @@ def _to_float_or_none(x):
         return float(str(x).replace("%", "").replace(",", "."))
     except:
         return None
-
 
 def get_dot_color(penalidade, acum, meta):
     def _to_float_or_none_local(x):
@@ -218,7 +184,6 @@ def get_dot_color(penalidade, acum, meta):
         else:
             return "🔴"
 
-
 # ===============================
 # NOMES DOS INDICADORES
 # ===============================
@@ -246,37 +211,146 @@ nome_indicador = {
     "PendIdentificacao": "Pendência de Identificação"
 }
 
+
 # ===============================
 # CARREGAR DADOS
 # ===============================
 
-# Carregar dados dos núcleos automaticamente
-df_nucleos = carregar_nucleos()
+# Carregar dados dos núcleos da nova planilha Google
+@st.cache_data(ttl=3600, show_spinner=False)
+def carregar_nucleos_google():
+    """
+    Carrega dados dos núcleos diretamente do Google Sheets
+    """
+    try:
+        # URL da nova planilha
+        url_nucleos = "https://docs.google.com/spreadsheets/d/1N2C-g4RSV4nOaPOwqp_u85395p6xv0OiBs-akfxLTfk/gviz/tq?tqx=out:csv&gid=0"
 
-# Se não conseguiu carregar dados, para a execução
-if df_nucleos is None:
-    st.error("""
-    ❌ Não foi possível carregar os dados dos núcleos. 
+        # Carregar dados
+        df_nuc = pd.read_csv(url_nucleos)
 
-    **Solução:**
-    1. Certifique-se que o arquivo 'dBase Nucleos.xlsx' está na raiz do repositório
-    2. Ou adicione o arquivo em uma pasta 'data/' ou 'src/'
-    3. Faça commit e push do arquivo
-    """)
-    st.stop()
+        # Verificar se as colunas necessárias existem
+        colunas_necessarias = ['Empresa', 'Setor', 'Nucleo', 'Regional']
+        colunas_faltantes = [col for col in colunas_necessarias if col not in df_nuc.columns]
 
-# Carregar dados do Google Sheets (mantido igual)
-url_base = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQt4btv46n1B98NZscSD8hz78_x2mUHlKWnXe3z4mL1vJWeymx4RMgoV58N4OLV2sG2U_GBj5AcTGVQ/"
-gids = ["0", "1688682064", "1552712710"]
-df_daily = carregar_daily_google(gids, url_base)
+        if colunas_faltantes:
+            st.error(f"❌ Colunas faltantes na planilha: {colunas_faltantes}")
+            return None
 
-# Merge dos dados
-df_merged = df_daily.merge(
-    df_nucleos[["Chave", "Nucleo", "Regional", "Setor"]],
-    left_on="Chave2", right_on="Chave", how="left"
-)
-df_merged.drop(columns=["Chave"], inplace=True)
+        # Criar chave única
+        df_nuc["Chave"] = df_nuc["Empresa"].astype(str) + df_nuc["Setor"].astype(str)
 
+        st.sidebar.success("✅ Dados dos núcleos carregados do Google Sheets")
+        return df_nuc
+
+    except Exception as e:
+        st.error(f"❌ Erro ao carregar dados dos núcleos: {str(e)}")
+        return None
+
+
+# ===============================
+# CARREGAR DADOS
+# ===============================
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def carregar_nucleos_google():
+    """
+    Carrega dados dos núcleos do Google Sheets
+    """
+    try:
+        # URL formatada corretamente para CSV
+        sheet_id = "1N2C-g4RSV4nOaPOwqp_u85395p6xv0OiBs-akfxLTfk"
+        gid = "0"  # GID da aba (geralmente 0 para a primeira aba)
+
+        url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
+
+        # Carregar dados
+        df_nuc = pd.read_csv(url)
+
+        # Verificar se as colunas necessárias existem
+        colunas_necessarias = ['Empresa', 'Setor', 'Nucleo', 'Regional']
+        colunas_faltantes = [col for col in colunas_necessarias if col not in df_nuc.columns]
+
+        if colunas_faltantes:
+            st.error(f"❌ Colunas faltantes na planilha: {colunas_faltantes}")
+            st.info("📋 Colunas encontradas: " + ", ".join(df_nuc.columns.tolist()))
+            return None
+
+        # Criar chave única
+        df_nuc["Chave"] = df_nuc["Empresa"].astype(str) + df_nuc["Setor"].astype(str)
+
+        st.sidebar.success("✅ Dados dos núcleos carregados do Google Sheets")
+        return df_nuc
+
+    except Exception as e:
+        st.error(f"❌ Erro ao carregar dados dos núcleos: {str(e)}")
+        return None
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def carregar_daily_google():
+    """
+    Carrega dados do daily do Google Sheets
+    """
+    try:
+        # URL da planilha original (que já funciona)
+        url_base = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQt4btv46n1B98NZscSD8hz78_x2mUHlKWnXe3z4mL1vJWeymx4RMgoV58N4OLV2sG2U_GBj5AcTGVQ/"
+        gids = ["0", "1688682064", "1552712710"]
+
+        abas = []
+        for gid in gids:
+            url_csv = f"{url_base}pub?gid={gid}&single=true&output=csv"
+            df = pd.read_csv(url_csv, encoding="utf-8")
+            df.columns = df.columns.str.strip()
+            if "Data" in df.columns:
+                df["Data"] = df["Data"].apply(converter_data_robusta)
+            if "Contagem" in df.columns:
+                df["Contagem"] = pd.to_numeric(
+                    df["Contagem"].astype(str).str.replace(",", ".", regex=False),
+                    errors="coerce"
+                )
+            abas.append(df)
+
+        df_daily = pd.concat(abas, ignore_index=True)
+        st.sidebar.success("✅ Dados diários carregados do Google Sheets")
+        return df_daily
+
+    except Exception as e:
+        st.error(f"❌ Erro ao carregar dados diários: {str(e)}")
+        return None
+
+
+# Carregar todos os dados
+with st.spinner("Carregando dados do Google Sheets..."):
+    # Carregar dados dos núcleos
+    df_nucleos = carregar_nucleos_google()
+
+    if df_nucleos is None:
+        st.error("""
+        ❌ Não foi possível carregar os dados dos núcleos.
+
+        **Solução:**
+        1. Verifique se a planilha está compartilhada publicamente
+        2. Vá em: Arquivo → Compartilhar → Configurações de compartilhamento
+        3. Selecione: "Qualquer pessoa com o link pode visualizar"
+        """)
+        st.stop()
+
+    # Carregar dados diários
+    df_daily = carregar_daily_google()
+
+    if df_daily is None:
+        st.error("Não foi possível carregar os dados diários.")
+        st.stop()
+
+    # Merge dos dados
+    df_merged = df_daily.merge(
+        df_nucleos[["Chave", "Nucleo", "Regional", "Setor"]],
+        left_on="Chave2", right_on="Chave", how="left"
+    )
+    df_merged.drop(columns=["Chave"], inplace=True)
+
+    st.success("✅ Todos os dados carregados com sucesso!")
 # ===============================
 # OCULTAR PENALIDADES/METAS PARA USUÁRIO
 # ===============================
@@ -322,7 +396,7 @@ if setor_sel:
 
 df_filt = df_filt[
     (df_filt["Data"].dt.date >= data_sel[0]) & (df_filt["Data"].dt.date <= data_sel[1])
-    ]
+]
 
 # ===============================
 # METAS DINÂMICAS
@@ -339,7 +413,7 @@ for pen, nome_meta in metas_dinamicas.items():
     df_meta["Data"] = pd.to_datetime(df_meta["Data"], errors="coerce")
     df_meta = df_meta[
         (df_meta["Data"].dt.date >= data_sel[0]) & (df_meta["Data"].dt.date <= data_sel[1])
-        ]
+    ]
     if df_meta.empty:
         continue
     if pen == "VPML":
@@ -410,7 +484,7 @@ for i, pen in enumerate(df_filt["Penalidades"].dropna().unique()):
             df_meta_geral = df_meta_geral[
                 (df_meta_geral["Data"].dt.date >= data_sel[0]) &
                 (df_meta_geral["Data"].dt.date <= data_sel[1])
-                ]
+            ]
             if not df_meta_geral.empty:
                 ultima_data = df_meta_geral["Data"].max()
                 df_meta_geral = df_meta_geral[df_meta_geral["Data"] == ultima_data]
