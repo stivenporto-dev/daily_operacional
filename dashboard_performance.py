@@ -5,7 +5,6 @@ from datetime import date, timedelta
 import math
 import os
 
-
 # ===============================
 # CONFIGURAÇÃO DA PÁGINA
 # ===============================
@@ -44,6 +43,7 @@ st.title("📊 Daily Operacional")
 st.markdown('</div>', unsafe_allow_html=True)
 st.markdown('<div class="content">', unsafe_allow_html=True)
 
+
 # ===============================
 # FUNÇÕES AUXILIARES
 # ===============================
@@ -59,6 +59,7 @@ def converter_data_robusta(x):
         except:
             continue
     return pd.to_datetime(x, dayfirst=True, errors="coerce")
+
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def carregar_daily_google(gids, url_base):
@@ -77,18 +78,40 @@ def carregar_daily_google(gids, url_base):
         abas.append(df)
     return pd.concat(abas, ignore_index=True)
 
+
 @st.cache_data(ttl=3600, show_spinner=False)
-def carregar_nucleos(file_input):
+def carregar_nucleos():
     """
-    Carrega dados dos núcleos - aceita tanto caminho quanto arquivo upload
+    Carrega dados dos núcleos do arquivo local
     """
     try:
-        df_nuc = pd.read_excel(file_input)
-        df_nuc["Chave"] = df_nuc["Empresa"].astype(str) + df_nuc["Setor"].astype(str)
-        return df_nuc
+        # Lista de possíveis locais do arquivo
+        possible_paths = [
+            "dBase Nucleos.xlsx",  # Na raiz do projeto
+            "./dBase Nucleos.xlsx",  # Na raiz (caminho relativo)
+            "data/dBase Nucleos.xlsx",  # Em pasta data/
+            "src/dBase Nucleos.xlsx",  # Em pasta src/
+        ]
+
+        # Tenta carregar de arquivo local
+        for file_path in possible_paths:
+            try:
+                if os.path.exists(file_path):
+                    df_nuc = pd.read_excel(file_path)
+                    df_nuc["Chave"] = df_nuc["Empresa"].astype(str) + df_nuc["Setor"].astype(str)
+                    st.sidebar.success(f"✅ Dados carregados: {file_path}")
+                    return df_nuc
+            except Exception as e:
+                continue
+
+        # Se não encontrou em nenhum local
+        st.error(f"❌ Arquivo 'dBase Nucleos.xlsx' não encontrado. Verifique se o arquivo está no repositório.")
+        return None
+
     except Exception as e:
         st.error(f"❌ Erro ao carregar dados dos núcleos: {str(e)}")
         return None
+
 
 def formatar_contagem(valor, tipo):
     if pd.isna(valor):
@@ -117,6 +140,7 @@ def formatar_contagem(valor, tipo):
         return f"{valor:.3f}".rstrip("0").rstrip(".")
     return str(valor)
 
+
 def calcular_acum_ultimo_dia(df, penalidade):
     # identifica colunas de data (exclui colunas fixas)
     cols_datas = [c for c in df.columns if c not in ["Regional", "Nucleo", "Meta", "Acum"]]
@@ -139,6 +163,7 @@ def calcular_acum_ultimo_dia(df, penalidade):
 
     return df
 
+
 # ===============================
 # FUNÇÕES DE COR E FORMATAÇÃO DE META
 # ===============================
@@ -147,6 +172,7 @@ def _to_float_or_none(x):
         return float(str(x).replace("%", "").replace(",", "."))
     except:
         return None
+
 
 def get_dot_color(penalidade, acum, meta):
     def _to_float_or_none_local(x):
@@ -192,6 +218,7 @@ def get_dot_color(penalidade, acum, meta):
         else:
             return "🔴"
 
+
 # ===============================
 # NOMES DOS INDICADORES
 # ===============================
@@ -222,51 +249,20 @@ nome_indicador = {
 # ===============================
 # CARREGAR DADOS
 # ===============================
-def load_data():
-    """Carrega dados com fallback para upload"""
-    
-    # Lista de possíveis locais do arquivo
-    possible_paths = [
-        "dBase Nucleos.xlsx",           # Na raiz do projeto
-        "./dBase Nucleos.xlsx",         # Na raiz (caminho relativo)
-        "data/dBase Nucleos.xlsx",      # Em pasta data/
-        "src/dBase Nucleos.xlsx",       # Em pasta src/
-    ]
-    
-    # Tenta carregar de arquivo local
-    for file_path in possible_paths:
-        try:
-            if os.path.exists(file_path):
-                df = carregar_nucleos(file_path)
-                if df is not None:
-                    st.sidebar.success(f"✅ Dados carregados automaticamente")
-                    st.sidebar.write(f"📁 Arquivo: {file_path}")
-                    return df
-        except Exception as e:
-            continue
-    
-    # Se não encontrou o arquivo local, oferece upload
-    st.sidebar.info("🔍 Arquivo padrão não encontrado")
-    uploaded_file = st.sidebar.file_uploader(
-        "📤 Faça upload do arquivo 'dBase Nucleos.xlsx'",
-        type=['xlsx'],
-        help="Selecione o arquivo Excel com os dados dos núcleos"
-    )
-    
-    if uploaded_file is not None:
-        df = carregar_nucleos(uploaded_file)
-        if df is not None:
-            st.sidebar.success("✅ Arquivo carregado via upload")
-            return df
-    
-    return None
 
-# Carregar dados dos núcleos
-df_nucleos = load_data()
+# Carregar dados dos núcleos automaticamente
+df_nucleos = carregar_nucleos()
 
 # Se não conseguiu carregar dados, para a execução
 if df_nucleos is None:
-    st.error("❌ Não foi possível carregar os dados dos núcleos. Verifique se o arquivo existe ou faça o upload.")
+    st.error("""
+    ❌ Não foi possível carregar os dados dos núcleos. 
+
+    **Solução:**
+    1. Certifique-se que o arquivo 'dBase Nucleos.xlsx' está na raiz do repositório
+    2. Ou adicione o arquivo em uma pasta 'data/' ou 'src/'
+    3. Faça commit e push do arquivo
+    """)
     st.stop()
 
 # Carregar dados do Google Sheets (mantido igual)
@@ -326,7 +322,7 @@ if setor_sel:
 
 df_filt = df_filt[
     (df_filt["Data"].dt.date >= data_sel[0]) & (df_filt["Data"].dt.date <= data_sel[1])
-]
+    ]
 
 # ===============================
 # METAS DINÂMICAS
@@ -343,7 +339,7 @@ for pen, nome_meta in metas_dinamicas.items():
     df_meta["Data"] = pd.to_datetime(df_meta["Data"], errors="coerce")
     df_meta = df_meta[
         (df_meta["Data"].dt.date >= data_sel[0]) & (df_meta["Data"].dt.date <= data_sel[1])
-    ]
+        ]
     if df_meta.empty:
         continue
     if pen == "VPML":
@@ -414,7 +410,7 @@ for i, pen in enumerate(df_filt["Penalidades"].dropna().unique()):
             df_meta_geral = df_meta_geral[
                 (df_meta_geral["Data"].dt.date >= data_sel[0]) &
                 (df_meta_geral["Data"].dt.date <= data_sel[1])
-            ]
+                ]
             if not df_meta_geral.empty:
                 ultima_data = df_meta_geral["Data"].max()
                 df_meta_geral = df_meta_geral[df_meta_geral["Data"] == ultima_data]
