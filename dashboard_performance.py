@@ -11,7 +11,7 @@ st.set_page_config(layout="wide", page_title="📊 Daily Operacional")
 hoje = date.today()
 
 # ===============================
-# ESTILO FIXO
+# ESTILO FIXO (AJUSTADO)
 # ===============================
 st.markdown("""
     <style>
@@ -31,6 +31,16 @@ st.markdown("""
         max-width: 100% !important;
         margin: 0 auto !important;
     }
+    /* 💡 CORREÇÃO PROVÁVEL PARA O SCROLL NO RENDER */
+    /* Garante que o contêiner do AgGrid e seus pais possam rolar */
+    .ag-root, .ag-body-viewport {
+        overflow-x: auto !important;
+        min-width: 1000px; /* Garante uma largura mínima se o conteúdo for grande */
+    }
+    /* O AgGrid tem um wrapper que pode estar limitando o scroll */
+    .st_aggrid_grid div[data-testid="stVerticalBlock"] > div {
+        overflow: unset !important;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -41,6 +51,7 @@ st.markdown('<div class="fixed-header">', unsafe_allow_html=True)
 st.title("📊 Daily Operacional")
 st.markdown('</div>', unsafe_allow_html=True)
 st.markdown('<div class="content">', unsafe_allow_html=True)
+
 
 # ===============================
 # FUNÇÕES AUXILIARES
@@ -58,6 +69,7 @@ def converter_data_robusta(x):
             continue
     return pd.to_datetime(x, dayfirst=True, errors="coerce")
 
+
 # Esta função original não será usada diretamente, mas a lógica de conversão é mantida abaixo.
 # @st.cache_data(ttl=3600, show_spinner=False)
 # def carregar_nucleos(xls_path):
@@ -71,7 +83,7 @@ def formatar_contagem(valor, tipo):
                    "MetaRecl%", "MetaAcid%", "VPML%"}
     inteiros = {"DocsPendentes", "DocsVencidBloq", "Reclamacoes", "Acidentes"}
     decimais = {"NotaConducao", "EventosExcessos", "BaixaConducao", "MultasRegulatorias"}
-    
+
     # Tentativa de converter para float para formatação segura
     try:
         val_float = float(valor)
@@ -84,8 +96,9 @@ def formatar_contagem(valor, tipo):
         return str(int(round(val_float)))
     if tipo in decimais:
         return f"{val_float:.2f}".rstrip("0").rstrip(".")
-    
+
     return f"{val_float:.3f}".rstrip("0").rstrip(".")
+
 
 def calcular_acum_ultimo_dia(df, penalidade):
     # Identifica colunas de data (exclui colunas fixas)
@@ -109,12 +122,14 @@ def calcular_acum_ultimo_dia(df, penalidade):
 
     return df
 
+
 # FUNÇÕES DE COR E FORMATAÇÃO DE META (Mantidas inalteradas)
 def _to_float_or_none(x):
     try:
         return float(str(x).replace("%", "").replace(",", "."))
     except:
         return None
+
 
 def get_dot_color(penalidade, acum, meta):
     def _to_float_or_none_local(x):
@@ -154,6 +169,7 @@ def get_dot_color(penalidade, acum, meta):
         else:
             return "🔴"
 
+
 # NOMES DOS INDICADORES (Mantidos inalterados)
 nome_indicador = {
     "DocsVencidBloq": "Documento Vencidos/Bloqueados", "DocsPendentes": "Documento Pendentes",
@@ -167,6 +183,7 @@ nome_indicador = {
     "MetaRecl%": "Reclamações % da meta", "Acidentes": "Sinistros",
     "MetaAcid%": "Sinistros % da meta", "PendIdentificacao": "Pendência de Identificação"
 }
+
 
 # ===============================
 # CARREGAMENTO DE DADOS (Consolidado e Robusto)
@@ -196,6 +213,7 @@ def carregar_nucleos_google():
         st.error(f"❌ Erro ao carregar dados dos núcleos: {str(e)}")
         return None
 
+
 @st.cache_data(ttl=3600, show_spinner=False)
 def carregar_daily_google():
     """Carrega dados do daily do Google Sheets"""
@@ -208,7 +226,7 @@ def carregar_daily_google():
             url_csv = f"{url_base}pub?gid={gid}&single=true&output=csv"
             df = pd.read_csv(url_csv, encoding="utf-8")
             df.columns = df.columns.str.strip()
-            
+
             # Aplica conversão robusta de Data e Contagem
             if "Data" in df.columns:
                 df["Data"] = df["Data"].apply(converter_data_robusta)
@@ -226,6 +244,7 @@ def carregar_daily_google():
     except Exception as e:
         st.error(f"❌ Erro ao carregar dados diários: {str(e)}")
         return None
+
 
 # Carregar todos os dados
 with st.spinner("Carregando dados do Google Sheets..."):
@@ -247,7 +266,7 @@ with st.spinner("Carregando dados do Google Sheets..."):
         left_on="Chave2", right_on="Chave", how="left"
     )
     df_merged.drop(columns=["Chave"], inplace=True)
-    
+
     # 💡 CORREÇÃO APLICADA: Forçar a coluna "Data" como datetime após o merge
     # Isso garante que a filtragem por data_sel funcione corretamente.
     df_merged["Data"] = pd.to_datetime(df_merged["Data"], errors="coerce")
@@ -277,12 +296,14 @@ with st.sidebar:
     setor_sel = st.multiselect("Setor", sorted(df_exib["Setor"].dropna().unique()))
 
     # Lógica de data para evitar erro se df_exib for vazio
-    min_date = df_exib["Data"].min().date() if not df_exib.empty and pd.notna(df_exib["Data"].min()) else hoje - timedelta(days=30)
-    max_date = df_exib["Data"].max().date() if not df_exib.empty and pd.notna(df_exib["Data"].max()) else hoje - timedelta(days=1)
-    
+    min_date = df_exib["Data"].min().date() if not df_exib.empty and pd.notna(
+        df_exib["Data"].min()) else hoje - timedelta(days=30)
+    max_date = df_exib["Data"].max().date() if not df_exib.empty and pd.notna(
+        df_exib["Data"].max()) else hoje - timedelta(days=1)
+
     # Garante que a data máxima de seleção não passe de "hoje - 1 dia"
     max_date_safe = min(max_date, hoje - timedelta(days=1))
-    
+
     data_sel = st.date_input("Período", value=[min_date, max_date_safe], min_value=min_date, max_value=max_date_safe)
 
     if not isinstance(data_sel, (list, tuple)) or len(data_sel) < 2:
@@ -304,7 +325,7 @@ if setor_sel:
 
 df_filt = df_filt[
     (df_filt["Data"].dt.date >= data_sel[0]) & (df_filt["Data"].dt.date <= data_sel[1])
-]
+    ]
 
 # Se após a filtragem o DF estiver vazio, pare a execução
 if df_filt.empty:
@@ -321,19 +342,19 @@ metas_dinamicas = {
 metas_por_nucleo = {}
 for pen, nome_meta in metas_dinamicas.items():
     df_meta = df_merged[df_merged["Penalidades"] == nome_meta].copy()
-    df_meta["Data"] = pd.to_datetime(df_meta["Data"], errors="coerce") # OK: Re-converte no DF de meta
+    df_meta["Data"] = pd.to_datetime(df_meta["Data"], errors="coerce")  # OK: Re-converte no DF de meta
     df_meta = df_meta[
         (df_meta["Data"].dt.date >= data_sel[0]) & (df_meta["Data"].dt.date <= data_sel[1])
-    ]
+        ]
     if df_meta.empty:
         continue
-    
+
     # Agregação
     if pen == "VPML":
         df_meta_agg = df_meta.groupby(["Nucleo", "Data"], as_index=False)["Contagem"].mean()
     else:
         df_meta_agg = df_meta.groupby(["Nucleo", "Data"], as_index=False)["Contagem"].sum()
-        
+
     ultima_data_periodo = df_meta_agg["Data"].max()
     df_meta_ult = df_meta_agg[df_meta_agg["Data"] == ultima_data_periodo]
     metas_por_nucleo[pen] = df_meta_ult.set_index("Nucleo")["Contagem"].to_dict()
@@ -362,7 +383,7 @@ for i, pen in enumerate(df_filt["Penalidades"].dropna().unique()):
         aggfunc=aggfunc,
         fill_value=pd.NA
     )
-    
+
     # Formatação de Colunas de Data
     pivot = pivot.sort_index(axis=1)
     pivot.columns = [col.strftime("%d/%m") for col in pivot.columns]
@@ -386,7 +407,7 @@ for i, pen in enumerate(df_filt["Penalidades"].dropna().unique()):
         geral_vals = pivot.iloc[:, 3:].apply(lambda col: pd.to_numeric(col, errors='coerce').dropna().mean(), axis=0)
     else:
         geral_vals = pivot.iloc[:, 3:].apply(lambda col: pd.to_numeric(col, errors='coerce').dropna().sum(), axis=0)
-    
+
     geral = pd.DataFrame([geral_vals])
     geral["Regional"] = "GERAL"
     geral["Nucleo"] = "-"
@@ -396,14 +417,14 @@ for i, pen in enumerate(df_filt["Penalidades"].dropna().unique()):
         # Lógica de Meta Geral baseada no df_merged filtrado pela data_sel
         df_meta_geral = df_merged[df_merged["Penalidades"] == metas_dinamicas.get(pen, "")].copy()
         df_meta_geral["Data"] = pd.to_datetime(df_meta_geral["Data"], errors="coerce")
-        
+
         nucleos_visiveis = pivot["Nucleo"].unique().tolist()
         df_meta_geral = df_meta_geral[df_meta_geral["Nucleo"].isin(nucleos_visiveis)]
         df_meta_geral = df_meta_geral[
             (df_meta_geral["Data"].dt.date >= data_sel[0]) &
             (df_meta_geral["Data"].dt.date <= data_sel[1])
-        ]
-        
+            ]
+
         if not df_meta_geral.empty:
             ultima_data = df_meta_geral["Data"].max()
             df_meta_geral = df_meta_geral[df_meta_geral["Data"] == ultima_data]
