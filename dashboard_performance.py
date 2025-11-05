@@ -3,6 +3,7 @@ import pandas as pd
 from st_aggrid import AgGrid, GridOptionsBuilder
 from datetime import date, timedelta
 import math
+import os
 
 
 # ===============================
@@ -77,10 +78,17 @@ def carregar_daily_google(gids, url_base):
     return pd.concat(abas, ignore_index=True)
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def carregar_nucleos(xls_path):
-    df_nuc = pd.read_excel(xls_path)
-    df_nuc["Chave"] = df_nuc["Empresa"].astype(str) + df_nuc["Setor"].astype(str)
-    return df_nuc
+def carregar_nucleos(file_input):
+    """
+    Carrega dados dos núcleos - aceita tanto caminho quanto arquivo upload
+    """
+    try:
+        df_nuc = pd.read_excel(file_input)
+        df_nuc["Chave"] = df_nuc["Empresa"].astype(str) + df_nuc["Setor"].astype(str)
+        return df_nuc
+    except Exception as e:
+        st.error(f"❌ Erro ao carregar dados dos núcleos: {str(e)}")
+        return None
 
 def formatar_contagem(valor, tipo):
     if pd.isna(valor):
@@ -214,13 +222,59 @@ nome_indicador = {
 # ===============================
 # CARREGAR DADOS
 # ===============================
-xls_path = r"I:\ITG_Inteligencia_Operacional\JCA_Inteligencia\01 - TELEMETRIA\dBase Nucleos.xlsx"
-df_nucleos = carregar_nucleos(xls_path)
+def load_data():
+    """Carrega dados com fallback para upload"""
+    
+    # Lista de possíveis locais do arquivo
+    possible_paths = [
+        "dBase Nucleos.xlsx",           # Na raiz do projeto
+        "./dBase Nucleos.xlsx",         # Na raiz (caminho relativo)
+        "data/dBase Nucleos.xlsx",      # Em pasta data/
+        "src/dBase Nucleos.xlsx",       # Em pasta src/
+    ]
+    
+    # Tenta carregar de arquivo local
+    for file_path in possible_paths:
+        try:
+            if os.path.exists(file_path):
+                df = carregar_nucleos(file_path)
+                if df is not None:
+                    st.sidebar.success(f"✅ Dados carregados automaticamente")
+                    st.sidebar.write(f"📁 Arquivo: {file_path}")
+                    return df
+        except Exception as e:
+            continue
+    
+    # Se não encontrou o arquivo local, oferece upload
+    st.sidebar.info("🔍 Arquivo padrão não encontrado")
+    uploaded_file = st.sidebar.file_uploader(
+        "📤 Faça upload do arquivo 'dBase Nucleos.xlsx'",
+        type=['xlsx'],
+        help="Selecione o arquivo Excel com os dados dos núcleos"
+    )
+    
+    if uploaded_file is not None:
+        df = carregar_nucleos(uploaded_file)
+        if df is not None:
+            st.sidebar.success("✅ Arquivo carregado via upload")
+            return df
+    
+    return None
 
+# Carregar dados dos núcleos
+df_nucleos = load_data()
+
+# Se não conseguiu carregar dados, para a execução
+if df_nucleos is None:
+    st.error("❌ Não foi possível carregar os dados dos núcleos. Verifique se o arquivo existe ou faça o upload.")
+    st.stop()
+
+# Carregar dados do Google Sheets (mantido igual)
 url_base = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQt4btv46n1B98NZscSD8hz78_x2mUHlKWnXe3z4mL1vJWeymx4RMgoV58N4OLV2sG2U_GBj5AcTGVQ/"
 gids = ["0", "1688682064", "1552712710"]
 df_daily = carregar_daily_google(gids, url_base)
 
+# Merge dos dados
 df_merged = df_daily.merge(
     df_nucleos[["Chave", "Nucleo", "Regional", "Setor"]],
     left_on="Chave2", right_on="Chave", how="left"
