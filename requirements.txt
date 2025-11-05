@@ -1,10 +1,7 @@
 streamlit==1.39.0
-pandas
-st-aggrid
+pandas==2.2.3
+st-aggrid==0.3.4
 pyodbc==5.1.0
 openpyxl==3.1.5
 unidecode==1.3.8
 rapidfuzz==3.9.1
-
-
-
