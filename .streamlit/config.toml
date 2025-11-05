@@ -1,4 +1,3 @@
 [server]
-port = $PORT
 enableCORS = false
 enableXsrfProtection = false
