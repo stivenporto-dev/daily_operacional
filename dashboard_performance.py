@@ -3,7 +3,7 @@ import pandas as pd
 from st_aggrid import AgGrid, GridOptionsBuilder
 from datetime import date, timedelta
 import math
-
+#atualização
 # ===============================
 # CONFIGURAÇÃO DA PÁGINA
 # ===============================
@@ -480,3 +480,4 @@ for i, pen in enumerate(df_filt["Penalidades"].dropna().unique()):
     st.divider()
 
 st.markdown('</div>', unsafe_allow_html=True)
+
