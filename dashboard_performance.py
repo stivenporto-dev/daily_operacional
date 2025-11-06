@@ -299,10 +299,10 @@ with st.sidebar:
     min_date = df_exib["Data"].min().date() if not df_exib.empty and pd.notna(
         df_exib["Data"].min()) else hoje - timedelta(days=30)
     max_date = df_exib["Data"].max().date() if not df_exib.empty and pd.notna(
-        df_exib["Data"].max()) else hoje - timedelta(days=1)
+        df_exib["Data"].max()) else hoje - timedelta(days=0)
 
     # Garante que a data máxima de seleção não passe de "hoje - 1 dia"
-    max_date_safe = min(max_date, hoje - timedelta(days=1))
+    max_date_safe = min(max_date, hoje - timedelta(days=0))
 
     data_sel = st.date_input("Período", value=[min_date, max_date_safe], min_value=min_date, max_value=max_date_safe)
 
@@ -480,4 +480,5 @@ for i, pen in enumerate(df_filt["Penalidades"].dropna().unique()):
     st.divider()
 
 st.markdown('</div>', unsafe_allow_html=True)
+
 
