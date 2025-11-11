@@ -9,7 +9,12 @@ import json
 # ===============================
 # CONFIGURAÇÃO DA PÁGINA
 # ===============================
-st.set_page_config(layout="wide", page_title="📊 Daily Operacional")
+st.set_page_config(
+    layout="wide", 
+    page_title="📊 Daily Operacional",
+    # 💡 ESTE É O PARÂMETRO CHAVE
+    initial_sidebar_state="collapsed", 
+    sidebar_width="300px" # Mantenha o ajuste de largura se desejar
 hoje = date.today()
 
 # ===============================
@@ -62,30 +67,6 @@ st.markdown("""
     hr {
         display: none; /* Garante que qualquer hr remanescente seja invisível e não ocupe espaço */
     }
-
-    /* ========================================================= */
-    /* 💡 CÓDIGO PARA FORÇAR A SIDEBAR A INICIAR FECHADA (REQUERIDO) */
-    /* O estado "aberto" é determinado por 'margin-left' no main e 'width' na sidebar. */
-
-    /* 1. Esconde a largura da sidebar e ajusta o conteúdo principal para 0 de margem */
-    section[data-testid="stSidebar"] {
-        width: 0px !important; 
-    }
-
-    /* 2. Garante que o conteúdo principal ocupe todo o espaço, removendo a margem da sidebar */
-    section[data-testid="stSidebar"] + div {
-        margin-left: 0px !important;
-    }
-
-    /* 3. Ajusta o botão (chevron) que abre/fecha a sidebar para que fique visível */
-    /* Nota: Seletor pode variar (ex: .st-emotion-cache-18ni7ap) */
-    button[data-testid="stSidebarNavCollapseButton"] {
-        left: 0px; 
-        z-index: 10000;
-        /* Se o botão sumir, tente descomentar a linha abaixo */
-        /* display: block !important; */
-    }
-
     /* ========================================================= */
     </style>
 """, unsafe_allow_html=True)
@@ -887,4 +868,5 @@ for i, pen in enumerate(df_filt["Penalidades"].dropna().unique()):
     st.divider()
 
 st.markdown('</div>', unsafe_allow_html=True)
+
 
