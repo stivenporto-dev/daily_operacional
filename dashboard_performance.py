@@ -69,7 +69,7 @@ st.markdown("""
 
     /* 1. Esconde a largura da sidebar e ajusta o conteúdo principal para 0 de margem */
     section[data-testid="stSidebar"] {
-        width: 280px !important; 
+        width: 0px !important; 
     }
 
     /* 2. Garante que o conteúdo principal ocupe todo o espaço, removendo a margem da sidebar */
@@ -887,3 +887,4 @@ for i, pen in enumerate(df_filt["Penalidades"].dropna().unique()):
     st.divider()
 
 st.markdown('</div>', unsafe_allow_html=True)
+
