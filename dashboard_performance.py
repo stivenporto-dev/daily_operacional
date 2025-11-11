@@ -790,19 +790,29 @@ for i, pen in enumerate(df_filt["Penalidades"].dropna().unique()):
         suppressAggFuncInHeader = True
 
     gb = GridOptionsBuilder.from_dataframe(df_data_raw)
-    gb.configure_default_column(resizable=True, width=100)
+    # 🔥 SOLUÇÃO COMPLETA - CONFIGURAÇÕES CORRIGIDAS
 
-    # Configurar colunas de agrupamento
+    # 1. CONFIGURAÇÃO PADRÃO PARA TODAS AS COLUNAS
+    gb.configure_default_column(
+        resizable=True,
+        # 🟢 REMOVER width do default para não afetar a coluna de agrupamento
+        suppressSizeToFit=False,  # Permitir sizeToFit para colunas de data
+        wrapHeaderText=True,
+        autoHeaderHeight=True
+    )
+
+    # 2. CONFIGURAR COLUNAS DE AGRUPAMENTO (PRIMEIRA COLUNA)
     gb.configure_column("Regional", rowGroup=True, hide=True, width=120)
     gb.configure_column("Nucleo", rowGroup=True, hide=True, width=120)
     gb.configure_column("Setor", rowGroup=True, hide=True, width=120)
 
-    # Configurar colunas Acum e Meta
+    # 3. CONFIGURAR COLUNAS ESPECIAIS (Acum e Meta)
     gb.configure_column(
         "Meta",
         headerName="Meta",
         pinned="left",
         width=110,
+        suppressSizeToFit=True,  # 🔥 Fixar largura apenas para estas
         aggFunc=meta_agg_func,
         valueFormatter=JsCode(formatter_js),
         type=['numericColumn', 'rightAligned']
@@ -813,39 +823,47 @@ for i, pen in enumerate(df_filt["Penalidades"].dropna().unique()):
         headerName="Acum",
         pinned="left",
         width=110,
+        suppressSizeToFit=True,  # 🔥 Fixar largura apenas para estas
         aggFunc=data_agg_func,
         valueFormatter=JsCode(formatter_js),
         type=['numericColumn', 'rightAligned']
     )
 
-    # Configurar colunas de Data Diária
+    # 4. CONFIGURAR COLUNAS DE DATA COM LARGURA FLEXÍVEL
     cols_data_in_pivot_aggrid = [c for c in df_data_raw.columns if
                                  c not in ["Regional", "Nucleo", "Setor", "Meta", "Acum"]]
+
     for col in cols_data_in_pivot_aggrid:
         gb.configure_column(
             col,
             headerName=col,
-            # 🟢 CORREÇÃO: LARGURA FIXA + SUPRESSÃO DE REDIMENSIONAMENTO AUTOMÁTICO
-            width=90,
-            suppressSizeToFit=True,  # 🔥 ESTA LINHA É A CHAVE
+            width=85,  # Largura base, mas permitir ajuste
+            minWidth=80,  # Largura mínima
+            maxWidth=100,  # Largura máxima
+            suppressSizeToFit=False,  # 🔥 PERMITIR ajuste automático
             aggFunc=data_agg_func,
             valueFormatter=JsCode(formatter_js),
-            type=['numericColumn', 'rightAligned'],
-            suppressMovable=True
+            type=['numericColumn', 'rightAligned']
         )
-    # Configurar coluna de agrupamento automática
+
+    # 5. CONFIGURAÇÃO DA COLUNA DE AGRUPAMENTO AUTOMÁTICA
     autoGroupColumnDef = {
         "headerName": "Regional / Núcleo / Setor",
         "pinned": "left",
-        "width": 350,
+        # 🟢 LARGURA ADEQUADA PARA A COLUNA DE AGRUPAMENTO
+        "width": 280,
+        "minWidth": 250,
+        "maxWidth": 350,
         "cellRendererParams": {
             "suppressCount": True,
-            # 💡 SOLUÇÃO APLICADA AQUI: Suprimir a linha de dados após o grupo
             "suppressLeafAfterColumns": True,
         },
+        # 🟢 GARANTIR QUE O TEXTO NÃO QUEBRE
+        "wrapHeaderText": False,
+        "autoHeaderHeight": False
     }
 
-    # Configurar grid options
+    # 6. CONFIGURAÇÕES GLOBAIS DO GRID
     gb.configure_grid_options(
         autoGroupColumnDef=autoGroupColumnDef,
         pinnedBottomRowData=geral_aggrid_raw.to_dict('records'),
@@ -855,15 +873,19 @@ for i, pen in enumerate(df_filt["Penalidades"].dropna().unique()):
         getRowId=getRowId_js,
         allow_unsafe_jscode=True,
 
-        # 🔥 NOVAS CONFIGURAÇÕES PARA ESTABILIDADE DO LAYOUT
-        suppressSizeToFit=True,  # Impressão de redimensionamento automático
-        ensureDomOrder=True,  # Garante ordem consistente do DOM
+        # 🟢 CONFIGURAÇÕES DE LAYOUT OTIMIZADAS
+        suppressSizeToFit=False,  # Permitir ajuste geral
+        ensureDomOrder=True,
 
-        # Configurações existentes...
+        # Configurações de grupo
         groupSuppressGroupRows=False,
         groupIncludeFooter=False,
         groupSuppressBlankAndFloatingRow=False,
         suppressAggAtRoot=True,
+
+        # 🟢 MELHORAR RENDERIZAÇÃO
+        suppressColumnVirtualisation=True,
+        rowBuffer=20
     )
 
     grid_options = gb.build()
