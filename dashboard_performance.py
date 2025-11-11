@@ -63,6 +63,30 @@ st.markdown("""
         display: none; /* Garante que qualquer hr remanescente seja invisível e não ocupe espaço */
     }
 
+    /* ========================================================= */
+    /* 💡 CÓDIGO PARA FORÇAR A SIDEBAR A INICIAR FECHADA (REQUERIDO) */
+    /* O estado "aberto" é determinado por 'margin-left' no main e 'width' na sidebar. */
+
+    /* 1. Esconde a largura da sidebar e ajusta o conteúdo principal para 0 de margem */
+    section[data-testid="stSidebar"] {
+        width: 280px !important; 
+    }
+
+    /* 2. Garante que o conteúdo principal ocupe todo o espaço, removendo a margem da sidebar */
+    section[data-testid="stSidebar"] + div {
+        margin-left: 0px !important;
+    }
+
+    /* 3. Ajusta o botão (chevron) que abre/fecha a sidebar para que fique visível */
+    /* Nota: Seletor pode variar (ex: .st-emotion-cache-18ni7ap) */
+    button[data-testid="stSidebarNavCollapseButton"] {
+        left: 0px; 
+        z-index: 10000;
+        /* Se o botão sumir, tente descomentar a linha abaixo */
+        /* display: block !important; */
+    }
+
+    /* ========================================================= */
     </style>
 """, unsafe_allow_html=True)
 # ===============================
@@ -158,6 +182,7 @@ def carregar_nucleos_google():
         # Se houver erro, a mensagem de erro deve persistir
         status_placeholder.error(f"❌ Erro ao carregar dados dos núcleos: {str(e)}")
         return pd.DataFrame()
+
 
 def _format_label(dt):
     # Formatting in Portuguese
@@ -394,6 +419,7 @@ df_exib["Setor"] = df_exib["Setor"].fillna("-")
 # ===============================
 # FILTROS
 # ===============================
+# 💡 MUDANÇA: Revertido para st.sidebar para manter na lateral
 with st.sidebar:
     st.header("🔍 Filtros")
 
@@ -848,12 +874,11 @@ for i, pen in enumerate(df_filt["Penalidades"].dropna().unique()):
             df_data_raw,
             gridOptions=grid_options,
             autoHeight=True,
-            fit_columns_on_grid_load=False,
+            fit_columns_on_grid_load=False,  # Manteve False
             enable_enterprise_modules=True,
             key=f"aggrid_{i}_{pen}",
             allow_unsafe_jscode=True,
-            # 💡 MUDANÇA: Use esta propriedade para tentar corrigir o ajuste
-            autoSizeColumns=True
+            # 💡 REMOVIDA: autoSizeColumns=True foi removido para evitar problemas de largura com colunas fixadas
         )
     except Exception as e:
         st.error(f"Erro ao exibir tabela para {pen}: {e}")
