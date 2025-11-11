@@ -851,7 +851,9 @@ for i, pen in enumerate(df_filt["Penalidades"].dropna().unique()):
             fit_columns_on_grid_load=False,
             enable_enterprise_modules=True,
             key=f"aggrid_{i}_{pen}",
-            allow_unsafe_jscode=True
+            allow_unsafe_jscode=True,
+            # 💡 MUDANÇA: Use esta propriedade para tentar corrigir o ajuste
+            autoSizeColumns=True
         )
     except Exception as e:
         st.error(f"Erro ao exibir tabela para {pen}: {e}")
