@@ -1,12 +1,5 @@
 streamlit==1.39.0
 pandas==2.2.3
-# Use a versão mais estável e recente do st-aggrid que funcione bem com sua versão do Streamlit. 
-# A 0.4.x é a mais recomendada. Vamos com a 0.4.2 para maior compatibilidade.
-streamlit-aggrid==1.2.0.post1python-dateutil==2.9.0.post0 
-# Biblioteca `dateutil` usada para `relativedelta`.
-# No seu código você está importando `from dateutil.relativedelta import relativedelta`.
-# A dependência principal é `python-dateutil`.
+streamlit-aggrid==1.2.0.post1 
+python-dateutil==2.9.0.post0
 openpyxl
-# Embora você não esteja usando diretamente no código, ela é útil para ler/escrever arquivos Excel, 
-# mas se você está lendo do Google Sheets agora, pode ser opcional. Deixaremos para o caso de precisar.
-
