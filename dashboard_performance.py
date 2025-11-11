@@ -15,6 +15,7 @@ st.set_page_config(
     # 💡 ESTE É O PARÂMETRO CHAVE
     initial_sidebar_state="collapsed", 
     sidebar_width="300px" # Mantenha o ajuste de largura se desejar
+)    
 hoje = date.today()
 
 # ===============================
@@ -868,5 +869,6 @@ for i, pen in enumerate(df_filt["Penalidades"].dropna().unique()):
     st.divider()
 
 st.markdown('</div>', unsafe_allow_html=True)
+
 
 
