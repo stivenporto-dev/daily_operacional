@@ -779,6 +779,39 @@ for i, pen in enumerate(df_filt["Penalidades"].dropna().unique()):
         }
         """)
 
+    js_reload_script = """
+    <script>
+        function forceAgGridResize() {
+            // Encontra todos os elementos AG-GRID (o contêiner principal)
+            const gridDivs = document.querySelectorAll('.ag-root-wrapper');
+
+            // Verifica se o Streamlit terminou de recarregar (necessário para o Sidebar)
+            const isRerunning = document.body.classList.contains('st-theme'); 
+
+            if (gridDivs.length > 0 && isRerunning) {
+                gridDivs.forEach(gridDiv => {
+                    // Tenta encontrar a instância do grid
+                    const gridApi = gridDiv.__ag_grid_api;
+                    if (gridApi) {
+                        // Chama o método nativo do AG Grid para redimensionar colunas e o corpo
+                        gridApi.sizeColumnsToFit(); 
+                        gridApi.onBodyHeightChanged(); // Força o ajuste do corpo
+                    }
+                });
+                console.log("AG Grid Redimensionado Forçado após Rerun.");
+            }
+        }
+
+        // Observa o container principal do Streamlit para saber quando o DOM é alterado (Rerun)
+        const observer = new MutationObserver(forceAgGridResize);
+        observer.observe(document.body, { childList: true, subtree: true });
+
+        // Chama a função uma vez após o carregamento inicial (para garantir)
+        window.addEventListener('load', forceAgGridResize); 
+    </script>
+    """
+    st.markdown(js_reload_script, unsafe_allow_html=True)
+
     # Estratégias de agregação
     if pen in penalidades_media:
         data_agg_func = "avg"
