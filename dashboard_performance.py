@@ -10,12 +10,12 @@ import json
 # CONFIGURAÇÃO DA PÁGINA
 # ===============================
 st.set_page_config(
-    layout="wide", 
+    layout="wide",
     page_title="📊 Daily Operacional",
     # 💡 ESTE É O PARÂMETRO CHAVE
     initial_sidebar_state="collapsed"
     #sidebar_width="300px" # Mantenha o ajuste de largura se desejar
-)    
+)
 hoje = date.today()
 
 # ===============================
@@ -454,7 +454,19 @@ with st.sidebar:
         st.error(f"Erro ao processar datas para o filtro: {e}")
         # Se ocorrer um erro, definimos as datas para um período vazio para evitar que o código falhe
         start_date, end_date = date(1900, 1, 1), date(1900, 1, 1)
-
+try:
+    filter_tuple = (
+        tuple(tema_sel),
+        tuple(penalidades_sel),
+        tuple(regional_sel),
+        tuple(nucleo_sel),
+        tuple(setor_sel),
+        periodo_sel # str, não precisa de tuple()
+    )
+    filter_hash = hash(filter_tuple)
+except Exception:
+    # Fallback caso algo não seja "hashable"
+    filter_hash = datetime.now().timestamp()
 # ===============================
 # FILTRAGEM
 # ===============================
@@ -856,11 +868,13 @@ for i, pen in enumerate(df_filt["Penalidades"].dropna().unique()):
             df_data_raw,
             gridOptions=grid_options,
             autoHeight=True,
-            fit_columns_on_grid_load=False,  # Manteve False
+            fit_columns_on_grid_load=False,
             enable_enterprise_modules=True,
-            key=f"aggrid_{i}_{pen}",
+
+            # 💡 MUDANÇA PRINCIPAL AQUI:
+            key=f"aggrid_{i}_{pen}_{filter_hash}",  # Adiciona o hash à key
+
             allow_unsafe_jscode=True,
-            # 💡 REMOVIDA: autoSizeColumns=True foi removido para evitar problemas de largura com colunas fixadas
         )
     except Exception as e:
         st.error(f"Erro ao exibir tabela para {pen}: {e}")
@@ -869,7 +883,6 @@ for i, pen in enumerate(df_filt["Penalidades"].dropna().unique()):
     st.divider()
 
 st.markdown('</div>', unsafe_allow_html=True)
-
 
 
 
