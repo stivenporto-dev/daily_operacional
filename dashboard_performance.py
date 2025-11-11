@@ -779,53 +779,53 @@ for i, pen in enumerate(df_filt["Penalidades"].dropna().unique()):
         }
         """)
 
-    # ===============================
-    # SCRIPT DE REDIMENSIONAMENTO AGGRID (SOLUÇÃO AGRESSIVA)
-    # ===============================
-    js_aggrid_resize = """
-    <script>
-        function resizeAllAgGrids() {
-            // Itera sobre todas as instâncias do AgGrid no DOM
-            const gridDivs = document.querySelectorAll('.ag-root-wrapper');
+    # # ===============================
+    # # SCRIPT DE REDIMENSIONAMENTO AGGRID (SOLUÇÃO AGRESSIVA)
+    # # ===============================
+    # js_aggrid_resize = """
+    # <script>
+    #     function resizeAllAgGrids() {
+    #         // Itera sobre todas as instâncias do AgGrid no DOM
+    #         const gridDivs = document.querySelectorAll('.ag-root-wrapper');
+    #
+    #         if (gridDivs.length > 0) {
+    #             gridDivs.forEach(gridDiv => {
+    #                 const gridApi = gridDiv.__ag_grid_api;
+    #                 if (gridApi) {
+    #                     // Força o ajuste do tamanho do corpo e, opcionalmente, das colunas.
+    #                     gridApi.onBodyHeightChanged();
+    #                     gridApi.sizeColumnsToFit();
+    #                 }
+    #             });
+    #             console.log("AG Grid: Redimensionamento forçado acionado.");
+    #         }
+    #     }
+    #
+    #     // 1. Ouvir evento interno do Streamlit (mais confiável)
+    #     document.addEventListener('st:reload', function() {
+    #         // Um pequeno atraso (debounce) é crucial para que o DOM termine de renderizar
+    #         setTimeout(resizeAllAgGrids, 100);
+    #     });
+    #
+    #     // 2. Garantir que, ao clicar no botão da sidebar, o redimensionamento ocorra
+    #     // O Streamlit usa o atributo data-testid="stSidebar" no container da sidebar
+    #     const sidebar = document.querySelector('[data-testid="stSidebar"]');
+    #     if (sidebar) {
+    #         const resizeObserver = new ResizeObserver(entries => {
+    #             // Se o tamanho do container da sidebar mudar (abrir/fechar)
+    #             setTimeout(resizeAllAgGrids, 100);
+    #         });
+    #         resizeObserver.observe(sidebar);
+    #     }
+    #
+    #     // 3. Redimensionamento inicial (para garantir a carga)
+    #     window.addEventListener('load', function() {
+    #         setTimeout(resizeAllAgGrids, 100);
+    #     });
+    # </script>
+    # """
+    # st.markdown(js_aggrid_resize, unsafe_allow_html=True)
 
-            if (gridDivs.length > 0) {
-                gridDivs.forEach(gridDiv => {
-                    const gridApi = gridDiv.__ag_grid_api;
-                    if (gridApi) {
-                        // Força o ajuste do tamanho do corpo e, opcionalmente, das colunas.
-                        gridApi.onBodyHeightChanged(); 
-                        gridApi.sizeColumnsToFit(); 
-                    }
-                });
-                console.log("AG Grid: Redimensionamento forçado acionado.");
-            }
-        }
-
-        // 1. Ouvir evento interno do Streamlit (mais confiável)
-        document.addEventListener('st:reload', function() {
-            // Um pequeno atraso (debounce) é crucial para que o DOM termine de renderizar
-            setTimeout(resizeAllAgGrids, 100); 
-        });
-
-        // 2. Garantir que, ao clicar no botão da sidebar, o redimensionamento ocorra
-        // O Streamlit usa o atributo data-testid="stSidebar" no container da sidebar
-        const sidebar = document.querySelector('[data-testid="stSidebar"]');
-        if (sidebar) {
-            const resizeObserver = new ResizeObserver(entries => {
-                // Se o tamanho do container da sidebar mudar (abrir/fechar)
-                setTimeout(resizeAllAgGrids, 100); 
-            });
-            resizeObserver.observe(sidebar);
-        }
-
-        // 3. Redimensionamento inicial (para garantir a carga)
-        window.addEventListener('load', function() {
-            setTimeout(resizeAllAgGrids, 100); 
-        });
-    </script>
-    """
-    st.markdown(js_aggrid_resize, unsafe_allow_html=True)
-    
     # Estratégias de agregação
     if pen in penalidades_media:
         data_agg_func = "avg"
@@ -872,6 +872,8 @@ for i, pen in enumerate(df_filt["Penalidades"].dropna().unique()):
         gb.configure_column(
             col,
             headerName=col,
+            # 🟢 NOVO: LARGURA FIXA PARA COLUNAS DE DATA
+            width=90,
             aggFunc=data_agg_func,
             valueFormatter=JsCode(formatter_js),
             type=['numericColumn', 'rightAligned']
