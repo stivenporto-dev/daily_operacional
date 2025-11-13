@@ -12,18 +12,15 @@ import json
 st.set_page_config(
     layout="wide",
     page_title="📊 Daily Operacional",
-    # 💡 ESTE É O PARÂMETRO CHAVE
     initial_sidebar_state="collapsed"
-    #sidebar_width="300px" # Mantenha o ajuste de largura se desejar
 )
 hoje = date.today()
 
 # ===============================
-# ESTILO FIXO (AJUSTADO PARA MINIMIZAR ESPAÇAMENTO PÓS-TABELA SEM DIVIDER)
-# ======================================================================
+# ESTILO FIXO
+# ===============================
 st.markdown("""
     <style>
-    /* Ajustes de CABEÇALHO (Para ícone não cortado) */
     .fixed-header {
         position: fixed;
         top: 0; left: 0; right: 0;
@@ -34,43 +31,28 @@ st.markdown("""
         border-bottom: 2px solid #ddd;
         box-shadow: 0 2px 5px rgbaa(0,0,0,0.05);
     }
-
-    /* Ajuste para garantir que o conteúdo comece abaixo do cabeçalho fixo */
     .content { margin-top: 30px; } 
-
-    /* Ajuste para o container principal */
     .block-container {
         padding: 1rem !important;
         max-width: 100% !important;
         margin: 0 auto !important;
     }
-
-    /* 🟢 NOVO: CSS para reduzir espaçamento ao máximo entre AgGrid e o próximo H3 */
-
-    /* 1. Reduzir a margem do título (###) para trazê-lo para mais perto da tabela anterior */
     h3 {
-        margin-top: 0rem !important;    /* Reduz o espaço ANTES do título (o grande espaço branco) */
+        margin-top: 0rem !important;
         margin-bottom: 0rem !important;
     }
-
-    /* 2. Reduzir a margem inferior do componente AgGrid e do bloco que o contém */
-    /* Este seletor tenta atingir o bloco que envolve a tabela AgGrid */
     div[data-testid*="stVerticalBlock"] > div:last-child {
         margin-bottom: 0rem !important; 
     }
-
-    /* 3. Ajuste fino para o container principal onde o AgGrid é inserido (Pode ser necessário) */
     div[data-testid*="stVerticalBlock"] > div > div.ag-root-wrapper {
         margin-bottom: 0rem !important;
     }
-
-    /* Remover HR (st.divider) se ainda houver alguma instância */
     hr {
-        display: none; /* Garante que qualquer hr remanescente seja invisível e não ocupe espaço */
+        display: none;
     }
-    /* ========================================================= */
     </style>
 """, unsafe_allow_html=True)
+
 # ===============================
 # CABEÇALHO FIXO
 # ===============================
@@ -123,51 +105,29 @@ def carregar_daily_google(gids, url_base):
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def carregar_nucleos_google():
-    """Carrega dados dos núcleos do Google Sheets (Substitui carregar_nucleos(xls_path))"""
-
-    # 1. Cria um placeholder para a mensagem na sidebar
     status_placeholder = st.sidebar.empty()
-
     try:
         sheet_id = "1N2C-g4RSV4nOaPOwqp_u85395p6xv0OiBs-akfxLTfk"
         gid = "0"
         url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
-
-        # 2. Mostra um status temporário de 'loading'
-        # Esta mensagem aparecerá apenas quando o cache for "miss" (primeira execução ou cache expirado)
         status_placeholder.info("Carregando dados dos Núcleos...")
-
         df_nuc = pd.read_csv(url)
         df_nuc.columns = df_nuc.columns.str.strip()
-
         colunas_necessarias = ['Empresa', 'Setor', 'Nucleo', 'Regional']
         colunas_faltantes = [col for col in colunas_necessarias if col not in df_nuc.columns]
-
         if colunas_faltantes:
-            # Em caso de erro, a mensagem de erro deve persistir
             status_placeholder.error(f"❌ Colunas faltantes na planilha de Núcleos: {colunas_faltantes}")
             return pd.DataFrame()
-
-        # Criação da chave de merge
         df_nuc["Chave"] = df_nuc["Empresa"].astype(str) + df_nuc["Setor"].astype(str)
-
-        # 3. Mostra o sucesso (apenas para o usuário ver que terminou)
         status_placeholder.success("✅ Dados dos núcleos carregados!")
-
-        # 4. LIMPA O PLACEHOLDER IMEDIATAMENTE APÓS EXIBIR O SUCESSO.
-        # Isso faz com que a mensagem de sucesso suma.
-        status_placeholder.empty()  # 💡 ESTA É A MUDANÇA PRINCIPAL
-
+        status_placeholder.empty()
         return df_nuc
-
     except Exception as e:
-        # Se houver erro, a mensagem de erro deve persistir
         status_placeholder.error(f"❌ Erro ao carregar dados dos núcleos: {str(e)}")
         return pd.DataFrame()
 
 
 def _format_label(dt):
-    # Formatting in Portuguese
     label = f"Daily - {dt.strftime('%B/%Y')}".replace(
         'January', 'Janeiro').replace('February', 'Fevereiro').replace(
         'March', 'Março').replace('April', 'Abril').replace(
@@ -178,55 +138,42 @@ def _format_label(dt):
     return label
 
 
-# Função para gerar os rótulos de período mensal (Ajustada)
 def generate_monthly_periods(min_date: date, today: date, max_data_date: date):
     periods = {}
-
     current_dt = datetime(min_date.year, min_date.month, 1)
-
-    # O loop deve ir até o PRIMEIRO dia do mês ATUAL
     end_loop_dt = datetime(today.year, today.month, 1)
-
-    # Loop que inclui o primeiro dia do mês atual
     while current_dt <= end_loop_dt:
         month_start = current_dt.date()
-
         is_current_month = (current_dt.date().year == today.year and current_dt.date().month == today.month)
-
         if is_current_month:
-            # Se for o mês atual, a data final é a menor entre 'hoje' e a data do último dado disponível.
             month_end = min(today, max_data_date)
         else:
-            # Para meses passados, a data final é o último dia do mês
             month_end = (current_dt + relativedelta(months=1) - timedelta(days=1)).date()
-
-        # Adiciona o mês apenas se o período for válido (month_start <= month_end).
         if month_start <= month_end:
             label = _format_label(current_dt)
             periods[label] = (month_start, month_end)
-
         current_dt += relativedelta(months=1)
-
     return periods
 
 
-# Listas de formatação
 PERCENTUAIS_LIST = {"Meta VPML", "VPML", "Pontual%", "ControleEmbarque",
                     "AcadDDS", "AcadFixo", "Identificacao%", "TripulacaoEscalada%", "BaixaConducao%",
                     "MetaRecl%", "MetaAcid%", "VPML%"}
 INTEIROS_LIST = {"DocsPendentes", "DocsVencidBloq", "Reclamacoes", "Acidentes"}
-DECIMAIS_LIST = {"NotaConducao", "EventosExcessos", "BaixaConducao", "MultasRegulatorias"}
+DECIMAIS_LIST = {"NotaConducao", "EventosExcessos", "BaixaConducao"}
+MOEDA_LIST = {"MultasRegulatorias"}  # ⬅️ NOVO: Indicadores de Moeda
+# Lista de indicadores onde "MENOR é MELHOR" (Exceder a meta é ruim/vermelho)
+LOWER_IS_BETTER_LIST = {"BaixaConducao%", "MultasRegulatorias", "DocsPendentes", "DocsVencidBloq",
+                        "Reclamacoes", "Acidentes", "VPML", "EventosExcessos"}
 
 
 def calcular_acum_ultimo_dia(df, penalidade):
     cols_datas = [c for c in df.columns if c not in ["Regional", "Nucleo", "Setor", "Meta", "Acum"]]
-
     if cols_datas:
         ultimo_col = cols_datas[-1]
         df["Acum"] = df[ultimo_col]
     else:
         df["Acum"] = pd.NA
-
     cols = df.columns.tolist()
     if "Acum" in cols:
         cols.remove("Acum")
@@ -249,8 +196,7 @@ def get_dot_color(penalidade, acum, meta):
     def _to_float_or_none_local(x):
         try:
             val = float(x)
-            if math.isnan(val):
-                return None
+            if math.isnan(val): return None
             return val
         except (TypeError, ValueError):
             return None
@@ -258,15 +204,11 @@ def get_dot_color(penalidade, acum, meta):
     acum_val = _to_float_or_none_local(acum)
     meta_val = _to_float_or_none_local(meta)
 
-    if meta_val is None:
-        return "⚫"
-    if acum_val is not None and meta_val == 0 and acum_val == 0:
-        return "🟢"
-    if acum_val is None:
-        return "⚪"
+    if meta_val is None: return "⚫"
+    if acum_val is not None and meta_val == 0 and acum_val == 0: return "🟢"
+    if acum_val is None: return "⚪"
 
-    if penalidade in {"BaixaConducao%", "MultasRegulatorias", "DocsPendentes", "DocsVencidBloq",
-                      "Reclamacoes", "Acidentes", "VPML", "EventosExcessos"}:
+    if penalidade in LOWER_IS_BETTER_LIST:
         if acum_val < meta_val:
             return "🟢"
         elif acum_val == meta_val:
@@ -282,9 +224,6 @@ def get_dot_color(penalidade, acum, meta):
             return "🔴"
 
 
-# ===============================
-# NOMES DOS INDICADORES E NOVO MAPA DE TEMA
-# ===============================
 nome_indicador = {
     "DocsVencidBloq": "Documento Vencidos/Bloqueados",
     "DocsPendentes": "Documento Pendentes",
@@ -304,7 +243,6 @@ nome_indicador = {
     "PendIdentificacao": "Pendência de Identificacao",
 }
 
-# 🟢 NOVO: Mapeamento de Penalidade para Tema
 INDICADOR_TEMA_MAP = {
     "DocsVencidBloq": "Documentação",
     "DocsPendentes": "Documentação",
@@ -360,9 +298,7 @@ INDICADOR_TEMA_MAP = {
 # CARREGAR DADOS
 # ===============================
 try:
-    # 🔄 Carregamento do Google Sheets (com placeholder de status)
     df_nucleos = carregar_nucleos_google()
-
     url_base = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQt4btv46n1B98NZscSD8hz78_x2mUHlKWnXe3z4mL1vJWeymx4RMgoV58N4OLV2sG2U_GBj5AcTGVQ/"
     gids = ["0", "1688682064", "1552712710"]
     df_daily = carregar_daily_google(gids, url_base)
@@ -377,17 +313,14 @@ try:
     )
     df_merged.drop(columns=["Chave"], inplace=True)
     df_merged["Contagem"] = pd.to_numeric(df_merged["Contagem"], errors='coerce').astype(float)
-
-    # 🟢 NOVO: Adiciona a coluna Tema
     df_merged["Tema"] = df_merged["Penalidades"].map(INDICADOR_TEMA_MAP).fillna("Outros")
-
 
 except Exception as e:
     st.error(f"Erro ao processar dados: {e}")
     st.stop()
 
 # ===============================
-# OCULTAR PENALIDADES/METAS PARA USUÁRIO
+# FILTROS
 # ===============================
 penalidades_ocultas = {
     "Meta VPML", "MetaReclamacoes", "MetaAcidentes", "MetaMultasReg",
@@ -398,128 +331,74 @@ df_exib = df_merged[~df_merged["Penalidades"].str.startswith("Penal", na=False)]
 df_exib = df_exib[~df_exib["Penalidades"].isin(penalidades_ocultas)]
 df_exib["Setor"] = df_exib["Setor"].fillna("-")
 
-# ===============================
-# FILTROS
-# ===============================
-# 💡 MUDANÇA: Revertido para st.sidebar para manter na lateral
 with st.sidebar:
     st.header("🔍 Filtros")
-
     if df_exib.empty:
         st.warning("Nenhum dado disponível para filtros.")
         st.stop()
 
-    # 🟢 NOVO: FILTRO TEMA (1º FILTRO)
     temas_visiveis = sorted(df_exib["Tema"].dropna().unique())
     tema_sel = st.multiselect("Tema", temas_visiveis, key="tema_sel_key")
-
     penalidades_visiveis = sorted(df_exib["Penalidades"].dropna().unique())
     penalidades_sel = st.multiselect("Penalidades", penalidades_visiveis, key="penalidades_sel_key")
-
     regional_sel = st.multiselect("Regional", sorted(df_exib["Regional"].dropna().unique()), key="regional_sel_key")
     nucleo_sel = st.multiselect("Núcleo", sorted(df_exib["Nucleo"].dropna().unique()), key="nucleo_sel_key")
     setor_sel = st.multiselect("Setor", sorted(df_exib["Setor"].dropna().unique()), key="setor_sel_key")
 
-    # Lógica de seleção de período mensal
     try:
-        # Pega a menor e a maior data do DataFrame
         min_data_dt = df_exib["Data"].min().to_pydatetime()
         min_period_date = min_data_dt.date()
-        max_data_date = df_exib["Data"].max().to_pydatetime().date()  # Última data com dado no DF
-
+        max_data_date = df_exib["Data"].max().to_pydatetime().date()
         period_map = generate_monthly_periods(min_period_date, hoje, max_data_date)
-
         if not period_map:
-            st.warning("⚠️ Não foi possível gerar os períodos mensais. Verifique a coluna 'Data'.")
+            st.warning("⚠️ Não foi possível gerar os períodos mensais.")
             st.stop()
-
         period_labels = list(period_map.keys())
-
-        # Define a seleção padrão para o mês mais recente (último da lista)
         default_index = len(period_labels) - 1
-
-        periodo_sel = st.selectbox(
-            "Selecione o Período",
-            options=period_labels,
-            index=default_index,
-            key="periodo_sel_key"
-        )
-
-        # Extrai as datas do período selecionado
+        periodo_sel = st.selectbox("Selecione o Período", options=period_labels, index=default_index,
+                                   key="periodo_sel_key")
         start_date, end_date = period_map[periodo_sel]
-
         st.caption(f"De: **{start_date.strftime('%d/%m/%Y')}** a **{end_date.strftime('%d/%m/%Y')}**")
-
     except Exception as e:
-        st.error(f"Erro ao processar datas para o filtro: {e}")
-        # Se ocorrer um erro, definimos as datas para um período vazio para evitar que o código falhe
+        st.error(f"Erro ao processar datas: {e}")
         start_date, end_date = date(1900, 1, 1), date(1900, 1, 1)
+
 try:
     filter_tuple = (
-        tuple(tema_sel),
-        tuple(penalidades_sel),
-        tuple(regional_sel),
-        tuple(nucleo_sel),
-        tuple(setor_sel),
-        periodo_sel # str, não precisa de tuple()
-    )
+    tuple(tema_sel), tuple(penalidades_sel), tuple(regional_sel), tuple(nucleo_sel), tuple(setor_sel), periodo_sel)
     filter_hash = hash(filter_tuple)
-except Exception:
-    # Fallback caso algo não seja "hashable"
+except:
     filter_hash = datetime.now().timestamp()
-# ===============================
-# FILTRAGEM
-# ===============================
+
 df_filt = df_exib.copy()
-
-# 🟢 NOVO: FILTRA POR TEMA
-if tema_sel:
-    df_filt = df_filt[df_filt["Tema"].isin(tema_sel)]
-
-if penalidades_sel:
-    df_filt = df_filt[df_filt["Penalidades"].isin(penalidades_sel)]
-if nucleo_sel:
-    df_filt = df_filt[df_filt["Nucleo"].isin(nucleo_sel)]
-if regional_sel:
-    df_filt = df_filt[df_filt["Regional"].isin(regional_sel)]
-if setor_sel:
-    df_filt = df_filt[df_filt["Setor"].isin(setor_sel)]
-
-# Uso das datas de início e fim do período selecionado
-df_filt = df_filt[
-    (df_filt["Data"].dt.date >= start_date) & (df_filt["Data"].dt.date <= end_date)
-    ]
+if tema_sel: df_filt = df_filt[df_filt["Tema"].isin(tema_sel)]
+if penalidades_sel: df_filt = df_filt[df_filt["Penalidades"].isin(penalidades_sel)]
+if nucleo_sel: df_filt = df_filt[df_filt["Nucleo"].isin(nucleo_sel)]
+if regional_sel: df_filt = df_filt[df_filt["Regional"].isin(regional_sel)]
+if setor_sel: df_filt = df_filt[df_filt["Setor"].isin(setor_sel)]
+df_filt = df_filt[(df_filt["Data"].dt.date >= start_date) & (df_filt["Data"].dt.date <= end_date)]
 
 if df_filt.empty or df_filt["Penalidades"].dropna().empty:
     st.warning("⚠️ Nenhum dado encontrado para os filtros e período selecionados.")
     st.stop()
 
 # ===============================
-# METAS DINÂMICAS (AJUSTADO PARA O SETOR)
+# METAS DINÂMICAS
 # ===============================
 metas_dinamicas = {
-    "VPML": "Meta VPML",
-    "Reclamacoes": "MetaReclamacoes",
-    "Acidentes": "MetaAcidentes",
-    "MultasRegulatorias": "MetaMultasReg"
+    "VPML": "Meta VPML", "Reclamacoes": "MetaReclamacoes",
+    "Acidentes": "MetaAcidentes", "MultasRegulatorias": "MetaMultasReg"
 }
 metas_por_setor = {}
 for pen, nome_meta in metas_dinamicas.items():
     df_meta = df_merged[df_merged["Penalidades"] == nome_meta].copy()
-
-    # Filtra apenas núcleos/setores que estão na exibição
     nucleos_visiveis = df_exib["Nucleo"].unique().tolist()
     setores_visiveis = df_exib["Setor"].unique().tolist()
     df_meta = df_meta[df_meta["Nucleo"].isin(nucleos_visiveis) & df_meta["Setor"].isin(setores_visiveis)]
-
     df_meta["Data"] = pd.to_datetime(df_meta["Data"], errors="coerce")
-    df_meta = df_meta[
-        (df_meta["Data"].dt.date >= start_date) & (df_meta["Data"].dt.date <= end_date)
-        ]
-    if df_meta.empty:
-        continue
+    df_meta = df_meta[(df_meta["Data"].dt.date >= start_date) & (df_meta["Data"].dt.date <= end_date)]
+    if df_meta.empty: continue
 
-    # MUDANÇA: Agrupa por Núcleo, Setor e Data
     if pen == "VPML":
         df_meta_agg = df_meta.groupby(["Nucleo", "Setor", "Data"], as_index=False)["Contagem"].mean()
     else:
@@ -527,18 +406,13 @@ for pen, nome_meta in metas_dinamicas.items():
 
     ultima_data_periodo = df_meta_agg["Data"].max()
     df_meta_ult = df_meta_agg[df_meta_agg["Data"] == ultima_data_periodo]
-
-    # MUDANÇA: Cria uma chave composta (Núcleo_Setor)
     df_meta_ult["Chave_Setor"] = df_meta_ult["Nucleo"].astype(str) + "_" + df_meta_ult["Setor"].astype(str)
     metas_por_setor[pen] = df_meta_ult.set_index("Chave_Setor")["Contagem"].to_dict()
 
-# ===============================
-# PENALIDADES COM MÉDIA
-# ===============================
 penalidades_media = {
     "Meta VPML", "VPML", "VPML%", "MetaAcid%", "MetaRecl%", "MetaReg%",
     "Pontual%", "ControleEmbarque", "AcadDDS", "AcadFixo", "Identificacao%",
-    "TripulacaoEscalada%", "BaixaConducao%", "NotaConducao", "BaixaConducao","EventosExcessos"
+    "TripulacaoEscalada%", "BaixaConducao%", "NotaConducao", "BaixaConducao", "EventosExcessos"
 }
 
 # ===============================
@@ -546,69 +420,40 @@ penalidades_media = {
 # ===============================
 for i, pen in enumerate(df_filt["Penalidades"].dropna().unique()):
     sub = df_filt[df_filt["Penalidades"] == pen].copy()
-
-    if sub.empty:
-        continue
+    if sub.empty: continue
 
     aggfunc = "mean" if pen in penalidades_media else "sum"
-
-    # Cria o PIVOT
     try:
         pivot = sub.pivot_table(
             index=["Regional", "Nucleo", "Setor"],
-            columns="Data",
-            values="Contagem",
-            aggfunc=aggfunc,
-            fill_value=pd.NA
+            columns="Data", values="Contagem", aggfunc=aggfunc, fill_value=pd.NA
         ).sort_index(axis=1)
-
-        if "Data" in pivot.columns:
-            pivot = pivot.drop(columns=["Data"])
-
-        # Renomeia colunas de data
+        if "Data" in pivot.columns: pivot = pivot.drop(columns=["Data"])
         pivot.columns = [col.strftime("%d/%m") for col in pivot.columns]
-
         df_data_raw = pivot.reset_index()
-
-        if "Data" in df_data_raw.columns:
-            df_data_raw = df_data_raw.drop(columns=["Data"])
-
+        if "Data" in df_data_raw.columns: df_data_raw = df_data_raw.drop(columns=["Data"])
         colunas_duplicadas = [c for c in df_data_raw.columns if c.lower().strip() == "data"]
-        if colunas_duplicadas:
-            df_data_raw = df_data_raw.drop(columns=colunas_duplicadas)
-
+        if colunas_duplicadas: df_data_raw = df_data_raw.drop(columns=colunas_duplicadas)
         df_data_raw = df_data_raw.loc[:, ~df_data_raw.columns.duplicated()]
         df_data_raw = df_data_raw[[c for c in df_data_raw.columns if not ("00:00" in str(c) or "Data" in str(c))]]
     except Exception as e:
-        st.error(f"Erro ao criar pivot para {pen}: {e}")
+        st.error(f"Erro pivot {pen}: {e}")
         continue
 
-    # Força todas as colunas de dados para float64
     cols_data_in_pivot = [c for c in df_data_raw.columns if c not in ["Regional", "Nucleo", "Setor"]]
-    for c in cols_data_in_pivot:
-        df_data_raw[c] = pd.to_numeric(df_data_raw[c], errors='coerce')
+    for c in cols_data_in_pivot: df_data_raw[c] = pd.to_numeric(df_data_raw[c], errors='coerce')
 
-    # Trata NaN para agregação correta no AgGrid
     if pen in penalidades_media:
-        # Para MÉDIAS: NaN vira None, para que o 'avg' ignore esses valores
         cols_to_fill_mean = [c for c in cols_data_in_pivot if c not in ["Meta", "Acum"]]
-        for c in cols_to_fill_mean:
-            df_data_raw[c] = df_data_raw[c].mask(pd.isna(df_data_raw[c]), None)
+        for c in cols_to_fill_mean: df_data_raw[c] = df_data_raw[c].mask(pd.isna(df_data_raw[c]), None)
     else:
-        # Para SOMAS: NaN vira 0.0
         cols_to_fill = [c for c in df_data_raw.columns if c not in ["Regional", "Nucleo", "Setor"]]
-        for c in cols_to_fill:
-            df_data_raw[c] = df_data_raw[c].fillna(0.0)
+        for c in cols_to_fill: df_data_raw[c] = df_data_raw[c].fillna(0.0)
 
-    # Acumulado = Último Dia
     df_data_raw = calcular_acum_ultimo_dia(df_data_raw, pen)
-
-    # Mapeamento de Meta (AJUSTADO PARA O SETOR)
-    # MUDANÇA: Cria a chave composta em df_data_raw para mapeamento
     df_data_raw["Chave_Setor"] = df_data_raw["Nucleo"].astype(str) + "_" + df_data_raw["Setor"].astype(str)
 
     if pen in metas_por_setor:
-        # MUDANÇA: Mapeia usando a chave Setor
         df_data_raw["Meta"] = df_data_raw["Chave_Setor"].map(metas_por_setor.get(pen, {})).fillna(pd.NA)
     else:
         metas_fixas = {
@@ -620,44 +465,32 @@ for i, pen in enumerate(df_filt["Penalidades"].dropna().unique()):
         df_data_raw["Meta"] = metas_fixas.get(pen, pd.NA)
 
     df_data_raw["Meta"] = pd.to_numeric(df_data_raw["Meta"], errors='coerce')
-
-    # MUDANÇA: Remove a coluna temporária
     df_data_raw.drop(columns=["Chave_Setor"], inplace=True)
-
-    # BLOCO ANTIGO REMOVIDO: A remoção desse bloco é a chave para exibir a meta em todos os setores
-    # if pen not in penalidades_media:
-    #     is_duplicated_nucleo = df_data_raw.duplicated(subset=["Nucleo"], keep='first')
-    #     df_data_raw.loc[is_duplicated_nucleo, "Meta"] = pd.NA
 
     cols_data_to_check = [c for c in df_data_raw.columns if c not in ["Regional", "Nucleo", "Setor"]]
     df_data_raw['has_data'] = df_data_raw[cols_data_to_check].notna().any(axis=1)
     df_data_raw = df_data_raw[df_data_raw['has_data']].drop(columns=['has_data'])
 
     if df_data_raw.empty:
-        display_pen = nome_indicador.get(pen, pen)
-        st.warning(f"⚠️ Nenhum resultado com dados para o indicador: **{display_pen}** no período selecionado.")
+        st.warning(f"⚠️ Nenhum resultado para: **{nome_indicador.get(pen, pen)}**")
         st.divider()
         continue
 
-    # Cálculo da Linha GERAL
+    # Cálculo GERAL
     cols_data_in_pivot_geral = [c for c in df_data_raw.columns if
                                 c not in ["Regional", "Nucleo", "Setor", "Meta", "Acum"]]
-
     if pen in penalidades_media:
         geral_vals = df_data_raw[cols_data_in_pivot_geral].apply(
             lambda col: col[col.notna()].mean() if len(col[col.notna()]) > 0 else pd.NA, axis=0)
     else:
-        geral_vals = df_data_raw[cols_data_in_pivot_geral].apply(
-            lambda col: col.sum(), axis=0)
+        geral_vals = df_data_raw[cols_data_in_pivot_geral].apply(lambda col: col.sum(), axis=0)
 
     geral = pd.DataFrame([geral_vals]).astype(float)
     geral["Regional"] = "GERAL"
     geral["Nucleo"] = "-"
     geral["Setor"] = "-"
-
     geral = geral[["Regional", "Nucleo", "Setor"] + geral_vals.index.tolist()]
 
-    # Cálculo da Meta Geral
     if pen in metas_dinamicas:
         df_meta_geral = df_merged[df_merged["Penalidades"] == metas_dinamicas.get(pen, "")].copy()
         df_meta_geral["Data"] = pd.to_datetime(df_meta_geral["Data"], errors="coerce")
@@ -665,13 +498,10 @@ for i, pen in enumerate(df_filt["Penalidades"].dropna().unique()):
             nucleos_visiveis = df_data_raw["Nucleo"].unique().tolist()
             df_meta_geral = df_meta_geral[df_meta_geral["Nucleo"].isin(nucleos_visiveis)]
             df_meta_geral = df_meta_geral[
-                (df_meta_geral["Data"].dt.date >= start_date) &
-                (df_meta_geral["Data"].dt.date <= end_date)
-                ]
+                (df_meta_geral["Data"].dt.date >= start_date) & (df_meta_geral["Data"].dt.date <= end_date)]
             if not df_meta_geral.empty:
                 ultima_data = df_meta_geral["Data"].max()
                 df_meta_geral = df_meta_geral[df_meta_geral["Data"] == ultima_data]
-                # A Meta Geral ainda é calculada por soma/média de todos os valores de meta
                 meta_geral = df_meta_geral["Contagem"].mean() if pen == "VPML" else df_meta_geral["Contagem"].sum()
             else:
                 meta_geral = pd.NA
@@ -681,19 +511,12 @@ for i, pen in enumerate(df_filt["Penalidades"].dropna().unique()):
         meta_geral = metas_fixas.get(pen, pd.NA)
 
     geral["Meta"] = meta_geral
-
-    # Acum Geral
     cols_datas_geral = [c for c in geral.columns if c not in ["Regional", "Nucleo", "Setor", "Meta"]]
-    if cols_datas_geral:
-        geral["Acum"] = geral[cols_datas_geral[-1]]
-    else:
-        geral["Acum"] = pd.NA
+    geral["Acum"] = geral[cols_datas_geral[-1]] if cols_datas_geral else pd.NA
 
-    # Reordenar colunas
     cols = geral.columns.tolist()
     for col in ["Meta", "Acum"]:
-        if col in cols:
-            cols.remove(col)
+        if col in cols: cols.remove(col)
     cols.insert(3, "Acum")
     cols.insert(4, "Meta")
     geral = geral[cols]
@@ -702,7 +525,6 @@ for i, pen in enumerate(df_filt["Penalidades"].dropna().unique()):
     for col in geral_aggrid_raw.columns:
         geral_aggrid_raw[col] = geral_aggrid_raw[col].mask(pd.isna(geral_aggrid_raw[col]), None)
 
-    # Cálculo da cor e Título
     media_acum = geral["Acum"].apply(_to_float_or_none).dropna().mean()
     media_meta = geral["Meta"].apply(_to_float_or_none).dropna().mean()
     cor = get_dot_color(pen, media_acum, media_meta)
@@ -710,206 +532,150 @@ for i, pen in enumerate(df_filt["Penalidades"].dropna().unique()):
 
     st.markdown(f"### {cor} {display_pen}")
 
-    # Formatter JS
     percentuais_js = json.dumps(list(PERCENTUAIS_LIST))
     inteiros_js = json.dumps(list(INTEIROS_LIST))
     decimais_js = json.dumps(list(DECIMAIS_LIST))
+    moeda_js = json.dumps(list(MOEDA_LIST))  # ⬅️ NOVO: DUMP DA LISTA DE MOEDA
+    lower_is_better_js = json.dumps(list(LOWER_IS_BETTER_LIST))
 
     formatter_js = f"""
     function(params) {{
         var value = params.value; 
         var penalidade = "{pen}".trim();
         var num_value;
-
-        if (value === null || value === undefined) {{
-            return ""; 
-        }}
-
-        try {{
-            num_value = parseFloat(String(value));
-        }} catch (e) {{
-            return ""; 
-        }}
-
-        if (isNaN(num_value)) {{
-            return ""; 
-        }}
-
+        if (value === null || value === undefined) return ""; 
+        try {{ num_value = parseFloat(String(value)); }} catch (e) {{ return ""; }}
+        if (isNaN(num_value)) return ""; 
         var percentuais = {percentuais_js};
         var inteiros = {inteiros_js};
         var decimais = {decimais_js};
-
-        // 1. PERCENTUAIS (Remove .toFixed(2) para que o formatter retire zeros desnecessários)
+        var moedas = {moeda_js}; // ⬅️ NOVO: Variável JS de Moeda
+        // 🟢 REGRA DE MOEDA (R$ BRL)
+        if (moedas.includes(penalidade)) {{
+            // Formata como moeda brasileira
+            return num_value.toLocaleString('pt-BR', {{ style: 'currency', currency: 'BRL' }});
+        }}
         if (percentuais.includes(penalidade)) {{
             return (num_value * 100).toFixed(2).replace(/0+$/, '').replace(/\.$/, '') + "%";
         }}
+        if (inteiros.includes(penalidade)) return Math.round(num_value).toString();
+        var str = decimais.includes(penalidade) ? num_value.toFixed(2) : num_value.toFixed(3);
+        if (num_value !== 0 && str.indexOf('.') > -1) {{
+            str = str.replace(/0+$/, '').replace(/\.$/, '');
+        }}
+        if (num_value === 0) return "0";
+        return str;
+    }}
+    """
 
-        // 2. INTEIROS
-        if (inteiros.includes(penalidade)) {{
-            return Math.round(num_value).toString();
+    # 🟢 ALTERADO: Cell Style JS para BACKGROUND COLOR na Coluna Acum
+    cell_style_js = f"""
+    function(params) {{
+        var penalidade = "{pen}".trim();
+        var lowerIsBetter = {lower_is_better_js};
+
+        // Função segura de parse
+        function parseVal(v) {{
+            if (v === null || v === undefined) return null;
+            if (typeof v === 'number') return v;
+            return parseFloat(String(v).replace(',', '.').replace('%', ''));
         }}
 
-        // 3. DECIMAIS / PADRÃO
-        var str = decimais.includes(penalidade) ? num_value.toFixed(2) : num_value.toFixed(3);
+        var acum = parseVal(params.value);
 
-        if (num_value !== 0) {{
-            if (str.indexOf('.') > -1) {{
-                str = str.replace(/0+$/, ''); 
-                str = str.replace(/\.$/, '');
+        // Tenta buscar a meta na linha de dados ou na linha de grupo
+        var meta = null;
+        if (params.node && params.node.aggData && params.node.aggData.Meta !== undefined) {{
+             meta = parseVal(params.node.aggData.Meta);
+        }} else if (params.data && params.data.Meta !== undefined) {{
+             meta = parseVal(params.data.Meta);
+        }}
+
+        if (acum === null || meta === null) return null;
+
+        // LÓGICA: BACKGROUND VERMELHO CLARO SE FOR RUIM
+        if (lowerIsBetter.includes(penalidade)) {{
+            // Se MENOR é melhor, então MAIOR que a meta é ruim
+            if (acum > meta) {{
+                // Fundo vermelho (#c4170c) com texto Branco escuro (#ffffff)
+                return {{'backgroundColor': '#a90015', 'color': '#ffffff', 'fontWeight': 'bold'}}; 
+            }}
+        }} else {{
+            // Se MAIOR é melhor, então MENOR que a meta é ruim
+            if (acum < meta) {{
+                return {{'backgroundColor': '#a90015', 'color': '#ffffff', 'fontWeight': 'bold'}};
             }}
         }}
 
-        if (num_value === 0) {{
-            return "0"; // Permite que zero seja exibido para não-percentuais
-        }}
-
-        return str;
+        return null;
     }}
     """
 
     getRowId_js = JsCode("""
         function(params) {
-            if (params.data.Setor) {
-                return params.data.Regional + params.data.Nucleo + params.data.Setor;
-            }
-            if (params.data.Regional === 'GERAL') {
-                return 'GERAL_ROW';
-            }
+            if (params.data.Setor) return params.data.Regional + params.data.Nucleo + params.data.Setor;
+            if (params.data.Regional === 'GERAL') return 'GERAL_ROW';
             return Math.random().toString();
         }
-        """)
+    """)
 
-    # Estratégias de agregação
-    if pen in penalidades_media:
-        data_agg_func = "avg"
-        meta_agg_func = "avg"
-        suppressAggFuncInHeader = True
-    else:
-        data_agg_func = "sum"
-        meta_agg_func = "sum"
-        suppressAggFuncInHeader = True
+    data_agg_func = "avg" if pen in penalidades_media else "sum"
+    meta_agg_func = "avg" if pen in penalidades_media else "sum"
+    suppressAggFuncInHeader = True
 
     gb = GridOptionsBuilder.from_dataframe(df_data_raw)
-    # 🔥 SOLUÇÃO COMPLETA - CONFIGURAÇÕES CORRIGIDAS
-
-    # 1. CONFIGURAÇÃO PADRÃO PARA TODAS AS COLUNAS
     gb.configure_default_column(
-        resizable=True,
-        # 🟢 REMOVER width do default para não afetar a coluna de agrupamento
-        suppressSizeToFit=False,  # Permitir sizeToFit para colunas de data
-        wrapHeaderText=True,
-        autoHeaderHeight=True
+        resizable=True, suppressSizeToFit=False, wrapHeaderText=True, autoHeaderHeight=True
     )
-
-    # 2. CONFIGURAR COLUNAS DE AGRUPAMENTO (PRIMEIRA COLUNA)
     gb.configure_column("Regional", rowGroup=True, hide=True, width=120)
     gb.configure_column("Nucleo", rowGroup=True, hide=True, width=120)
     gb.configure_column("Setor", rowGroup=True, hide=True, width=120)
 
-    # 3. CONFIGURAR COLUNAS ESPECIAIS (Acum e Meta)
     gb.configure_column(
-        "Meta",
-        headerName="Meta",
-        pinned="left",
-        width=110,
-        suppressSizeToFit=True,  # 🔥 Fixar largura apenas para estas
-        aggFunc=meta_agg_func,
-        valueFormatter=JsCode(formatter_js),
-        type=['numericColumn', 'rightAligned']
+        "Meta", headerName="Meta", pinned="left", width=110, suppressSizeToFit=True,
+        aggFunc=meta_agg_func, valueFormatter=JsCode(formatter_js), type=['numericColumn', 'rightAligned']
     )
 
+    # 🟢 APLICANDO O STYLE JS NOVO AQUI
     gb.configure_column(
-        "Acum",
-        headerName="Acum",
-        pinned="left",
-        width=110,
-        suppressSizeToFit=True,  # 🔥 Fixar largura apenas para estas
-        aggFunc=data_agg_func,
-        valueFormatter=JsCode(formatter_js),
-        type=['numericColumn', 'rightAligned']
+        "Acum", headerName="Acum", pinned="left", width=110, suppressSizeToFit=True,
+        aggFunc=data_agg_func, valueFormatter=JsCode(formatter_js), type=['numericColumn', 'rightAligned'],
+        cellStyle=JsCode(cell_style_js)
     )
 
-    # 4. CONFIGURAR COLUNAS DE DATA COM LARGURA FLEXÍVEL
     cols_data_in_pivot_aggrid = [c for c in df_data_raw.columns if
                                  c not in ["Regional", "Nucleo", "Setor", "Meta", "Acum"]]
-
     for col in cols_data_in_pivot_aggrid:
         gb.configure_column(
-            col,
-            headerName=col,
-            width=85,  # Largura base, mas permitir ajuste
-            minWidth=80,  # Largura mínima
-            maxWidth=100,  # Largura máxima
-            suppressSizeToFit=False,  # 🔥 PERMITIR ajuste automático
-            aggFunc=data_agg_func,
-            valueFormatter=JsCode(formatter_js),
-            type=['numericColumn', 'rightAligned']
+            col, headerName=col, width=85, minWidth=80, maxWidth=100, suppressSizeToFit=False,
+            aggFunc=data_agg_func, valueFormatter=JsCode(formatter_js), type=['numericColumn', 'rightAligned']
         )
 
-    # 5. CONFIGURAÇÃO DA COLUNA DE AGRUPAMENTO AUTOMÁTICA
     autoGroupColumnDef = {
-        "headerName": "Regional / Núcleo / Setor",
-        "pinned": "left",
-        # 🟢 LARGURA ADEQUADA PARA A COLUNA DE AGRUPAMENTO
-        "width": 280,
-        "minWidth": 250,
-        "maxWidth": 350,
-        "cellRendererParams": {
-            "suppressCount": True,
-            "suppressLeafAfterColumns": True,
-        },
-        # 🟢 GARANTIR QUE O TEXTO NÃO QUEBRE
-        "wrapHeaderText": False,
-        "autoHeaderHeight": False
+        "headerName": "Regional / Núcleo / Setor", "pinned": "left", "width": 280,
+        "minWidth": 250, "maxWidth": 350,
+        "cellRendererParams": {"suppressCount": True, "suppressLeafAfterColumns": True},
+        "wrapHeaderText": False, "autoHeaderHeight": False
     }
 
-    # 6. CONFIGURAÇÕES GLOBAIS DO GRID
     gb.configure_grid_options(
-        autoGroupColumnDef=autoGroupColumnDef,
-        pinnedBottomRowData=geral_aggrid_raw.to_dict('records'),
-        groupDefaultExpanded=0,
-        suppressAggFuncInHeader=suppressAggFuncInHeader,
-        rangeSelection=True,
-        getRowId=getRowId_js,
-        allow_unsafe_jscode=True,
-
-        # 🟢 CONFIGURAÇÕES DE LAYOUT OTIMIZADAS
-        suppressSizeToFit=False,  # Permitir ajuste geral
-        ensureDomOrder=True,
-
-        # Configurações de grupo
-        groupSuppressGroupRows=False,
-        groupIncludeFooter=False,
-        groupSuppressBlankAndFloatingRow=False,
-        suppressAggAtRoot=True,
-
-        # 🟢 MELHORAR RENDERIZAÇÃO
-        suppressColumnVirtualisation=True,
-        rowBuffer=20
+        autoGroupColumnDef=autoGroupColumnDef, pinnedBottomRowData=geral_aggrid_raw.to_dict('records'),
+        groupDefaultExpanded=0, suppressAggFuncInHeader=suppressAggFuncInHeader, rangeSelection=True,
+        getRowId=getRowId_js, allow_unsafe_jscode=True, suppressSizeToFit=False, ensureDomOrder=True,
+        groupSuppressGroupRows=False, groupIncludeFooter=False, groupSuppressBlankAndFloatingRow=False,
+        suppressAggAtRoot=True, suppressColumnVirtualisation=True, rowBuffer=20
     )
 
     grid_options = gb.build()
-
-    # Exibir a grade
     try:
         AgGrid(
-            df_data_raw,
-            gridOptions=grid_options,
-            autoHeight=True,
-            fit_columns_on_grid_load=False,
-            enable_enterprise_modules=True,
-
-            # 💡 MUDANÇA PRINCIPAL AQUI:
-            key=f"aggrid_{i}_{pen}_{filter_hash}",  # Adiciona o hash à key
-
-            allow_unsafe_jscode=True,
+            df_data_raw, gridOptions=grid_options, autoHeight=True,
+            fit_columns_on_grid_load=False, enable_enterprise_modules=True,
+            key=f"aggrid_{i}_{pen}_{filter_hash}", allow_unsafe_jscode=True,
         )
     except Exception as e:
-        st.error(f"Erro ao exibir tabela para {pen}: {e}")
+        st.error(f"Erro tabela {pen}: {e}")
         continue
-
     st.divider()
 
 st.markdown('</div>', unsafe_allow_html=True)
-
-
