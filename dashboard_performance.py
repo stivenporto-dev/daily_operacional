@@ -362,13 +362,13 @@ with st.sidebar:
     except Exception as e:
         st.error(f"Erro ao processar datas: {e}")
         start_date, end_date = date(1900, 1, 1), date(1900, 1, 1)
-
+# 🟢 CORREÇÃO:
 try:
-    filter_tuple = (
-    tuple(tema_sel), tuple(penalidades_sel), tuple(regional_sel), tuple(nucleo_sel), tuple(setor_sel), periodo_sel)
+    # Convertemos para string para garantir estabilidade do hash
+    filter_tuple = (str(tema_sel), str(penalidades_sel), str(regional_sel), str(nucleo_sel), str(setor_sel), str(periodo_sel))
     filter_hash = hash(filter_tuple)
 except:
-    filter_hash = datetime.now().timestamp()
+    filter_hash = "static_hash_fallback" # Valor fixo para não quebrar a renderização
 
 df_filt = df_exib.copy()
 if tema_sel: df_filt = df_filt[df_filt["Tema"].isin(tema_sel)]
@@ -530,152 +530,160 @@ for i, pen in enumerate(df_filt["Penalidades"].dropna().unique()):
     cor = get_dot_color(pen, media_acum, media_meta)
     display_pen = nome_indicador.get(pen, pen)
 
-    st.markdown(f"### {cor} {display_pen}")
+    # 🔴 ANTES ERA ASSIM:
+    # st.markdown(f"### {cor} {display_pen}")
 
-    percentuais_js = json.dumps(list(PERCENTUAIS_LIST))
-    inteiros_js = json.dumps(list(INTEIROS_LIST))
-    decimais_js = json.dumps(list(DECIMAIS_LIST))
-    moeda_js = json.dumps(list(MOEDA_LIST))  # ⬅️ NOVO: DUMP DA LISTA DE MOEDA
-    lower_is_better_js = json.dumps(list(LOWER_IS_BETTER_LIST))
+    # 🟢 AGORA FICA ASSIM (Com Expander):
+    # O parâmetro expanded=False faz começar fechado. Se quiser aberto, use True.
+    with st.expander(f"{cor} {display_pen}", expanded=False):
 
-    formatter_js = f"""
-    function(params) {{
-        var value = params.value; 
-        var penalidade = "{pen}".trim();
-        var num_value;
-        if (value === null || value === undefined) return ""; 
-        try {{ num_value = parseFloat(String(value)); }} catch (e) {{ return ""; }}
-        if (isNaN(num_value)) return ""; 
-        var percentuais = {percentuais_js};
-        var inteiros = {inteiros_js};
-        var decimais = {decimais_js};
-        var moedas = {moeda_js}; // ⬅️ NOVO: Variável JS de Moeda
-        // 🟢 REGRA DE MOEDA (R$ BRL)
-        if (moedas.includes(penalidade)) {{
-            // Formata como moeda brasileira
-            return num_value.toLocaleString('pt-BR', {{ style: 'currency', currency: 'BRL' }});
-        }}
-        if (percentuais.includes(penalidade)) {{
-            return (num_value * 100).toFixed(2).replace(/0+$/, '').replace(/\.$/, '') + "%";
-        }}
-        if (inteiros.includes(penalidade)) return Math.round(num_value).toString();
-        var str = decimais.includes(penalidade) ? num_value.toFixed(2) : num_value.toFixed(3);
-        if (num_value !== 0 && str.indexOf('.') > -1) {{
-            str = str.replace(/0+$/, '').replace(/\.$/, '');
-        }}
-        if (num_value === 0) return "0";
-        return str;
-    }}
-    """
+        # TUDO ABAIXO PRECISA ESTAR INDENTADO (TAB) PARA DENTRO DO "WITH"
 
-    # 🟢 ALTERADO: Cell Style JS para BACKGROUND COLOR na Coluna Acum
-    cell_style_js = f"""
-    function(params) {{
-        var penalidade = "{pen}".trim();
-        var lowerIsBetter = {lower_is_better_js};
+        percentuais_js = json.dumps(list(PERCENTUAIS_LIST))
+        inteiros_js = json.dumps(list(INTEIROS_LIST))
+        decimais_js = json.dumps(list(DECIMAIS_LIST))
+        moeda_js = json.dumps(list(MOEDA_LIST))
+        lower_is_better_js = json.dumps(list(LOWER_IS_BETTER_LIST))
 
-        // Função segura de parse
-        function parseVal(v) {{
-            if (v === null || v === undefined) return null;
-            if (typeof v === 'number') return v;
-            return parseFloat(String(v).replace(',', '.').replace('%', ''));
-        }}
+        formatter_js = f"""
+            function(params) {{
+                var value = params.value; 
+                var penalidade = "{pen}".trim();
+                var num_value;
+                if (value === null || value === undefined) return ""; 
+                try {{ num_value = parseFloat(String(value)); }} catch (e) {{ return ""; }}
+                if (isNaN(num_value)) return ""; 
+                var percentuais = {percentuais_js};
+                var inteiros = {inteiros_js};
+                var decimais = {decimais_js};
+                var moedas = {moeda_js}; 
 
-        var acum = parseVal(params.value);
-
-        // Tenta buscar a meta na linha de dados ou na linha de grupo
-        var meta = null;
-        if (params.node && params.node.aggData && params.node.aggData.Meta !== undefined) {{
-             meta = parseVal(params.node.aggData.Meta);
-        }} else if (params.data && params.data.Meta !== undefined) {{
-             meta = parseVal(params.data.Meta);
-        }}
-
-        if (acum === null || meta === null) return null;
-
-        // LÓGICA: BACKGROUND VERMELHO CLARO SE FOR RUIM
-        if (lowerIsBetter.includes(penalidade)) {{
-            // Se MENOR é melhor, então MAIOR que a meta é ruim
-            if (acum > meta) {{
-                // Fundo vermelho (#c4170c) com texto Branco escuro (#ffffff)
-                return {{'backgroundColor': '#a90015', 'color': '#ffffff', 'fontWeight': 'bold'}}; 
+                if (moedas.includes(penalidade)) {{
+                    return num_value.toLocaleString('pt-BR', {{ style: 'currency', currency: 'BRL' }});
+                }}
+                if (percentuais.includes(penalidade)) {{
+                    return (num_value * 100).toFixed(2).replace(/0+$/, '').replace(/\.$/, '') + "%";
+                }}
+                if (inteiros.includes(penalidade)) return Math.round(num_value).toString();
+                var str = decimais.includes(penalidade) ? num_value.toFixed(2) : num_value.toFixed(3);
+                if (num_value !== 0 && str.indexOf('.') > -1) {{
+                    str = str.replace(/0+$/, '').replace(/\.$/, '');
+                }}
+                if (num_value === 0) return "0";
+                return str;
             }}
-        }} else {{
-            // Se MAIOR é melhor, então MENOR que a meta é ruim
-            if (acum < meta) {{
-                return {{'backgroundColor': '#a90015', 'color': '#ffffff', 'fontWeight': 'bold'}};
+            """
+
+        cell_style_js = f"""
+            function(params) {{
+                var penalidade = "{pen}".trim();
+                var lowerIsBetter = {lower_is_better_js};
+
+                function parseVal(v) {{
+                    if (v === null || v === undefined) return null;
+                    if (typeof v === 'number') return v;
+                    return parseFloat(String(v).replace(',', '.').replace('%', ''));
+                }}
+
+                var acum = parseVal(params.value);
+
+                var meta = null;
+                if (params.node && params.node.aggData && params.node.aggData.Meta !== undefined) {{
+                     meta = parseVal(params.node.aggData.Meta);
+                }} else if (params.data && params.data.Meta !== undefined) {{
+                     meta = parseVal(params.data.Meta);
+                }}
+
+                if (acum === null || meta === null) return null;
+
+                if (lowerIsBetter.includes(penalidade)) {{
+                    if (acum > meta) {{
+                        return {{'backgroundColor': '#a90015', 'color': '#ffffff', 'fontWeight': 'bold'}}; 
+                    }}
+                }} else {{
+                    if (acum < meta) {{
+                        return {{'backgroundColor': '#a90015', 'color': '#ffffff', 'fontWeight': 'bold'}};
+                    }}
+                }}
+
+                return null;
             }}
-        }}
+            """
 
-        return null;
-    }}
-    """
+        getRowId_js = JsCode("""
+                function(params) {
+                    if (params.data.Setor) return params.data.Regional + params.data.Nucleo + params.data.Setor;
+                    if (params.data.Regional === 'GERAL') return 'GERAL_ROW';
+                    return Math.random().toString();
+                }
+            """)
 
-    getRowId_js = JsCode("""
-        function(params) {
-            if (params.data.Setor) return params.data.Regional + params.data.Nucleo + params.data.Setor;
-            if (params.data.Regional === 'GERAL') return 'GERAL_ROW';
-            return Math.random().toString();
-        }
-    """)
+        data_agg_func = "avg" if pen in penalidades_media else "sum"
+        meta_agg_func = "avg" if pen in penalidades_media else "sum"
+        suppressAggFuncInHeader = True
 
-    data_agg_func = "avg" if pen in penalidades_media else "sum"
-    meta_agg_func = "avg" if pen in penalidades_media else "sum"
-    suppressAggFuncInHeader = True
+        gb = GridOptionsBuilder.from_dataframe(df_data_raw)
+        gb.configure_default_column(
+            resizable=True, suppressSizeToFit=False, wrapHeaderText=True, autoHeaderHeight=True
+        )
+        gb.configure_column("Regional", rowGroup=True, hide=True, width=120)
+        gb.configure_column("Nucleo", rowGroup=True, hide=True, width=120)
+        gb.configure_column("Setor", rowGroup=True, hide=True, width=120)
 
-    gb = GridOptionsBuilder.from_dataframe(df_data_raw)
-    gb.configure_default_column(
-        resizable=True, suppressSizeToFit=False, wrapHeaderText=True, autoHeaderHeight=True
-    )
-    gb.configure_column("Regional", rowGroup=True, hide=True, width=120)
-    gb.configure_column("Nucleo", rowGroup=True, hide=True, width=120)
-    gb.configure_column("Setor", rowGroup=True, hide=True, width=120)
-
-    gb.configure_column(
-        "Meta", headerName="Meta", pinned="left", width=110, suppressSizeToFit=True,
-        aggFunc=meta_agg_func, valueFormatter=JsCode(formatter_js), type=['numericColumn', 'rightAligned']
-    )
-
-    # 🟢 APLICANDO O STYLE JS NOVO AQUI
-    gb.configure_column(
-        "Acum", headerName="Acum", pinned="left", width=110, suppressSizeToFit=True,
-        aggFunc=data_agg_func, valueFormatter=JsCode(formatter_js), type=['numericColumn', 'rightAligned'],
-        cellStyle=JsCode(cell_style_js)
-    )
-
-    cols_data_in_pivot_aggrid = [c for c in df_data_raw.columns if
-                                 c not in ["Regional", "Nucleo", "Setor", "Meta", "Acum"]]
-    for col in cols_data_in_pivot_aggrid:
         gb.configure_column(
-            col, headerName=col, width=85, minWidth=80, maxWidth=100, suppressSizeToFit=False,
-            aggFunc=data_agg_func, valueFormatter=JsCode(formatter_js), type=['numericColumn', 'rightAligned']
+            "Meta", headerName="Meta", pinned="left", width=110, minWidth=110, suppressSizeToFit=True,
+            aggFunc=meta_agg_func, valueFormatter=JsCode(formatter_js), type=['numericColumn', 'rightAligned']
         )
 
-    autoGroupColumnDef = {
-        "headerName": "Regional / Núcleo / Setor", "pinned": "left", "width": 280,
-        "minWidth": 250, "maxWidth": 350,
-        "cellRendererParams": {"suppressCount": True, "suppressLeafAfterColumns": True},
-        "wrapHeaderText": False, "autoHeaderHeight": False
-    }
-
-    gb.configure_grid_options(
-        autoGroupColumnDef=autoGroupColumnDef, pinnedBottomRowData=geral_aggrid_raw.to_dict('records'),
-        groupDefaultExpanded=0, suppressAggFuncInHeader=suppressAggFuncInHeader, rangeSelection=True,
-        getRowId=getRowId_js, allow_unsafe_jscode=True, suppressSizeToFit=False, ensureDomOrder=True,
-        groupSuppressGroupRows=False, groupIncludeFooter=False, groupSuppressBlankAndFloatingRow=False,
-        suppressAggAtRoot=True, suppressColumnVirtualisation=True, rowBuffer=20
-    )
-
-    grid_options = gb.build()
-    try:
-        AgGrid(
-            df_data_raw, gridOptions=grid_options, autoHeight=True,
-            fit_columns_on_grid_load=False, enable_enterprise_modules=True,
-            key=f"aggrid_{i}_{pen}_{filter_hash}", allow_unsafe_jscode=True,
+        gb.configure_column(
+            "Acum", headerName="Acum", pinned="left", width=110, minWidth=110, suppressSizeToFit=True,
+            aggFunc=data_agg_func, valueFormatter=JsCode(formatter_js), type=['numericColumn', 'rightAligned'],
+            cellStyle=JsCode(cell_style_js)
         )
-    except Exception as e:
-        st.error(f"Erro tabela {pen}: {e}")
-        continue
-    st.divider()
+
+        cols_data_in_pivot_aggrid = [c for c in df_data_raw.columns if
+                                     c not in ["Regional", "Nucleo", "Setor", "Meta", "Acum"]]
+        for col in cols_data_in_pivot_aggrid:
+            gb.configure_column(
+                col, headerName=col, width=85, minWidth=80, maxWidth=100, suppressSizeToFit=False,
+                aggFunc=data_agg_func, valueFormatter=JsCode(formatter_js), type=['numericColumn', 'rightAligned']
+            )
+
+        autoGroupColumnDef = {
+            "headerName": "Regional / Núcleo / Setor", "pinned": "left", "width": 280,
+            "minWidth": 250, "maxWidth": 350,
+            "cellRendererParams": {"suppressCount": True, "suppressLeafAfterColumns": True},
+            "wrapHeaderText": False, "autoHeaderHeight": False
+        }
+
+        gb.configure_grid_options(
+            autoGroupColumnDef=autoGroupColumnDef, pinnedBottomRowData=geral_aggrid_raw.to_dict('records'),
+            groupDefaultExpanded=0, suppressAggFuncInHeader=suppressAggFuncInHeader, rangeSelection=True,
+            getRowId=getRowId_js, allow_unsafe_jscode=True, suppressSizeToFit=False, ensureDomOrder=True,
+            groupSuppressGroupRows=False, groupIncludeFooter=False, groupSuppressBlankAndFloatingRow=False,
+            suppressAggAtRoot=True, suppressColumnVirtualisation=True, rowBuffer=20
+        )
+
+        grid_options = gb.build()
+        try:
+            AgGrid(
+                df_data_raw,
+                gridOptions=grid_options,
+                # 🔴 REMOVA esta linha, ela está causando o erro de altura zero:
+                # autoHeight=True,
+
+                # 🟢 ADICIONE UMA ALTURA FIXA PARA FORÇAR O RENDER
+                height=400,  # Use um valor que funcione bem para você (ex: 350, 400 ou 450)
+
+                fit_columns_on_grid_load=False,
+                enable_enterprise_modules=True,
+                key=f"grid_{pen}_{filter_hash}",
+                allow_unsafe_jscode=True,
+            )
+        except Exception as e:
+            st.error(f"Erro tabela {pen}: {e}")
+            continue
+    # Fora do expander, removemos o divider pois o expander já cria uma separação visual
+    # st.divider()
 
 st.markdown('</div>', unsafe_allow_html=True)
