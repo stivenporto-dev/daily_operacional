@@ -12,7 +12,7 @@ import json
 st.set_page_config(
     layout="wide",
     page_title="📊 Daily Operacional",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="collapsed",
 )
 hoje = date.today()
 
@@ -161,7 +161,7 @@ PERCENTUAIS_LIST = {"Meta VPML", "VPML", "Pontual%", "ControleEmbarque",
                     "MetaRecl%", "MetaAcid%", "VPML%"}
 INTEIROS_LIST = {"DocsPendentes", "DocsVencidBloq", "Reclamacoes", "Acidentes"}
 DECIMAIS_LIST = {"NotaConducao", "EventosExcessos", "BaixaConducao"}
-MOEDA_LIST = {"MultasRegulatorias"}  # ⬅️ NOVO: Indicadores de Moeda
+MOEDA_LIST = {"MultasRegulatorias"}
 # Lista de indicadores onde "MENOR é MELHOR" (Exceder a meta é ruim/vermelho)
 LOWER_IS_BETTER_LIST = {"BaixaConducao%", "MultasRegulatorias", "DocsPendentes", "DocsVencidBloq",
                         "Reclamacoes", "Acidentes", "VPML", "EventosExcessos"}
@@ -294,6 +294,26 @@ INDICADOR_TEMA_MAP = {
     "Vendas": "Geral",
 }
 
+# =======================================================
+# NOVO DICIONÁRIO DE ÍCONES POR TEMA
+# =======================================================
+TEMA_ICONE_MAP = {
+    "Documentação": "📄",
+    "Controle de Embarque": "🚦",
+    "Veículo Parado com o Motor Ligado": "⛽",
+    "Histórico de Condução": "🚌",
+    "Treinamentos EAD": "🎓",
+    "Excessos de Velocidade": "🚨",
+    "Pontualidade": "⏱️",
+    "Multas Regulatórias": "💰",
+    "Escala de Tripulantes - OPTZ": "👥",
+    "Identificação de Condutor": "👤",
+    "Reclamações": "🗣️",
+    "Sinistros": "💥",
+    "Geral": "⚙️",
+    "Outros": "❓",
+}
+
 # ===============================
 # CARREGAR DADOS
 # ===============================
@@ -362,13 +382,14 @@ with st.sidebar:
     except Exception as e:
         st.error(f"Erro ao processar datas: {e}")
         start_date, end_date = date(1900, 1, 1), date(1900, 1, 1)
-# 🟢 CORREÇÃO:
+
 try:
     # Convertemos para string para garantir estabilidade do hash
-    filter_tuple = (str(tema_sel), str(penalidades_sel), str(regional_sel), str(nucleo_sel), str(setor_sel), str(periodo_sel))
+    filter_tuple = (
+    str(tema_sel), str(penalidades_sel), str(regional_sel), str(nucleo_sel), str(setor_sel), str(periodo_sel))
     filter_hash = hash(filter_tuple)
 except:
-    filter_hash = "static_hash_fallback" # Valor fixo para não quebrar a renderização
+    filter_hash = "static_hash_fallback"  # Valor fixo para não quebrar a renderização
 
 df_filt = df_exib.copy()
 if tema_sel: df_filt = df_filt[df_filt["Tema"].isin(tema_sel)]
@@ -415,275 +436,311 @@ penalidades_media = {
     "TripulacaoEscalada%", "BaixaConducao%", "NotaConducao", "BaixaConducao", "EventosExcessos"
 }
 
-# ===============================
-# LOOP PRINCIPAL (TABELAS)
-# ===============================
-for i, pen in enumerate(df_filt["Penalidades"].dropna().unique()):
-    sub = df_filt[df_filt["Penalidades"] == pen].copy()
-    if sub.empty: continue
+# =======================================================
+# ORDEM FIXA DOS INDICADORES
+# =======================================================
 
-    aggfunc = "mean" if pen in penalidades_media else "sum"
-    try:
-        pivot = sub.pivot_table(
-            index=["Regional", "Nucleo", "Setor"],
-            columns="Data", values="Contagem", aggfunc=aggfunc, fill_value=pd.NA
-        ).sort_index(axis=1)
-        if "Data" in pivot.columns: pivot = pivot.drop(columns=["Data"])
-        pivot.columns = [col.strftime("%d/%m") for col in pivot.columns]
-        df_data_raw = pivot.reset_index()
-        if "Data" in df_data_raw.columns: df_data_raw = df_data_raw.drop(columns=["Data"])
-        colunas_duplicadas = [c for c in df_data_raw.columns if c.lower().strip() == "data"]
-        if colunas_duplicadas: df_data_raw = df_data_raw.drop(columns=colunas_duplicadas)
-        df_data_raw = df_data_raw.loc[:, ~df_data_raw.columns.duplicated()]
-        df_data_raw = df_data_raw[[c for c in df_data_raw.columns if not ("00:00" in str(c) or "Data" in str(c))]]
-    except Exception as e:
-        st.error(f"Erro pivot {pen}: {e}")
+# 1. Definir uma lista mestra de indicadores a serem exibidos com ordem estável
+penalidades_candidatas = [
+    p for p in INDICADOR_TEMA_MAP.keys()
+    if not p.startswith("Penal") and p not in penalidades_ocultas
+]
+# Ordena por nome de exibição para uma ordem estável
+penalidades_ordem_fixa = sorted(penalidades_candidatas, key=lambda p: nome_indicador.get(p, p))
+
+# 2. Identificar quais indicadores da lista fixa estão presentes no DF filtrado
+penalidades_no_df_filtrado = set(df_filt["Penalidades"].dropna().unique())
+penalidades_para_exibir = [
+    p for p in penalidades_ordem_fixa if p in penalidades_no_df_filtrado
+]
+
+# =======================================================
+# LOOP PRINCIPAL (TABELAS) - AGRUPADO POR TEMA E COM ÍCONES
+# =======================================================
+
+# 1. Agrupar as penalidades por Tema, mantendo a ordem fixa.
+indicadores_por_tema = {}
+for pen in penalidades_para_exibir:
+    tema = INDICADOR_TEMA_MAP.get(pen, "Outros")
+    if tema not in indicadores_por_tema:
+        indicadores_por_tema[tema] = []
+    indicadores_por_tema[tema].append(pen)
+
+# 2. Definir a ordem dos Temas
+temas_a_exibir = [INDICADOR_TEMA_MAP.get(p, "Outros") for p in penalidades_para_exibir]
+ordem_temas_fixa = sorted(list(set(temas_a_exibir)))
+
+# 3. Iterar sobre os Temas e seus Indicadores
+for tema in ordem_temas_fixa:
+    indicadores_do_tema = indicadores_por_tema.get(tema, [])
+    if not indicadores_do_tema:
         continue
 
-    cols_data_in_pivot = [c for c in df_data_raw.columns if c not in ["Regional", "Nucleo", "Setor"]]
-    for c in cols_data_in_pivot: df_data_raw[c] = pd.to_numeric(df_data_raw[c], errors='coerce')
+    # 🟢 NOVO: Busca o ícone correspondente ao tema
+    icone_tema = TEMA_ICONE_MAP.get(tema, "❓")
 
-    if pen in penalidades_media:
-        cols_to_fill_mean = [c for c in cols_data_in_pivot if c not in ["Meta", "Acum"]]
-        for c in cols_to_fill_mean: df_data_raw[c] = df_data_raw[c].mask(pd.isna(df_data_raw[c]), None)
-    else:
-        cols_to_fill = [c for c in df_data_raw.columns if c not in ["Regional", "Nucleo", "Setor"]]
-        for c in cols_to_fill: df_data_raw[c] = df_data_raw[c].fillna(0.0)
+    # Cria um expander principal para o TEMA.
+    # 🟢 Usa o ícone e inicia expandido
+    with st.expander(f"## {icone_tema} **{tema}**", expanded=False):
 
-    df_data_raw = calcular_acum_ultimo_dia(df_data_raw, pen)
-    df_data_raw["Chave_Setor"] = df_data_raw["Nucleo"].astype(str) + "_" + df_data_raw["Setor"].astype(str)
+        # Loop interno que cria a tabela para CADA INDICADOR
+        for i, pen in enumerate(indicadores_do_tema):
+            sub = df_filt[df_filt["Penalidades"] == pen].copy()
+            if sub.empty: continue
 
-    if pen in metas_por_setor:
-        df_data_raw["Meta"] = df_data_raw["Chave_Setor"].map(metas_por_setor.get(pen, {})).fillna(pd.NA)
-    else:
-        metas_fixas = {
-            "Pontual%": 0.8, "ControleEmbarque": 0.9, "AcadDDS": 0.95, "AcadFixo": 0.9,
-            "BaixaConducao%": 0.1, "DocsPendentes": 0, "DocsVencidBloq": 0,
-            "EventosExcessos": 0.02, "Identificacao%": 0.98, "TripulacaoEscalada%": 0.96,
-            "NotaConducao": 70.0
-        }
-        df_data_raw["Meta"] = metas_fixas.get(pen, pd.NA)
+            aggfunc = "mean" if pen in penalidades_media else "sum"
+            try:
+                pivot = sub.pivot_table(
+                    index=["Regional", "Nucleo", "Setor"],
+                    columns="Data", values="Contagem", aggfunc=aggfunc, fill_value=pd.NA
+                ).sort_index(axis=1)
+                if "Data" in pivot.columns: pivot = pivot.drop(columns=["Data"])
+                pivot.columns = [col.strftime("%d/%m") for col in pivot.columns]
+                df_data_raw = pivot.reset_index()
+                if "Data" in df_data_raw.columns: df_data_raw = df_data_raw.drop(columns=["Data"])
+                colunas_duplicadas = [c for c in df_data_raw.columns if c.lower().strip() == "data"]
+                if colunas_duplicadas: df_data_raw = df_data_raw.drop(columns=colunas_duplicadas)
+                df_data_raw = df_data_raw.loc[:, ~df_data_raw.columns.duplicated()]
+                df_data_raw = df_data_raw[
+                    [c for c in df_data_raw.columns if not ("00:00" in str(c) or "Data" in str(c))]]
+            except Exception as e:
+                st.error(f"Erro pivot {pen}: {e}")
+                continue
 
-    df_data_raw["Meta"] = pd.to_numeric(df_data_raw["Meta"], errors='coerce')
-    df_data_raw.drop(columns=["Chave_Setor"], inplace=True)
+            cols_data_in_pivot = [c for c in df_data_raw.columns if c not in ["Regional", "Nucleo", "Setor"]]
+            for c in cols_data_in_pivot: df_data_raw[c] = pd.to_numeric(df_data_raw[c], errors='coerce')
 
-    cols_data_to_check = [c for c in df_data_raw.columns if c not in ["Regional", "Nucleo", "Setor"]]
-    df_data_raw['has_data'] = df_data_raw[cols_data_to_check].notna().any(axis=1)
-    df_data_raw = df_data_raw[df_data_raw['has_data']].drop(columns=['has_data'])
-
-    if df_data_raw.empty:
-        st.warning(f"⚠️ Nenhum resultado para: **{nome_indicador.get(pen, pen)}**")
-        st.divider()
-        continue
-
-    # Cálculo GERAL
-    cols_data_in_pivot_geral = [c for c in df_data_raw.columns if
-                                c not in ["Regional", "Nucleo", "Setor", "Meta", "Acum"]]
-    if pen in penalidades_media:
-        geral_vals = df_data_raw[cols_data_in_pivot_geral].apply(
-            lambda col: col[col.notna()].mean() if len(col[col.notna()]) > 0 else pd.NA, axis=0)
-    else:
-        geral_vals = df_data_raw[cols_data_in_pivot_geral].apply(lambda col: col.sum(), axis=0)
-
-    geral = pd.DataFrame([geral_vals]).astype(float)
-    geral["Regional"] = "GERAL"
-    geral["Nucleo"] = "-"
-    geral["Setor"] = "-"
-    geral = geral[["Regional", "Nucleo", "Setor"] + geral_vals.index.tolist()]
-
-    if pen in metas_dinamicas:
-        df_meta_geral = df_merged[df_merged["Penalidades"] == metas_dinamicas.get(pen, "")].copy()
-        df_meta_geral["Data"] = pd.to_datetime(df_meta_geral["Data"], errors="coerce")
-        if not df_meta_geral.empty:
-            nucleos_visiveis = df_data_raw["Nucleo"].unique().tolist()
-            df_meta_geral = df_meta_geral[df_meta_geral["Nucleo"].isin(nucleos_visiveis)]
-            df_meta_geral = df_meta_geral[
-                (df_meta_geral["Data"].dt.date >= start_date) & (df_meta_geral["Data"].dt.date <= end_date)]
-            if not df_meta_geral.empty:
-                ultima_data = df_meta_geral["Data"].max()
-                df_meta_geral = df_meta_geral[df_meta_geral["Data"] == ultima_data]
-                meta_geral = df_meta_geral["Contagem"].mean() if pen == "VPML" else df_meta_geral["Contagem"].sum()
+            if pen in penalidades_media:
+                cols_to_fill_mean = [c for c in cols_data_in_pivot if c not in ["Meta", "Acum"]]
+                for c in cols_to_fill_mean: df_data_raw[c] = df_data_raw[c].mask(pd.isna(df_data_raw[c]), None)
             else:
-                meta_geral = pd.NA
-        else:
-            meta_geral = pd.NA
-    else:
-        meta_geral = metas_fixas.get(pen, pd.NA)
+                cols_to_fill = [c for c in df_data_raw.columns if c not in ["Regional", "Nucleo", "Setor"]]
+                for c in cols_to_fill: df_data_raw[c] = df_data_raw[c].fillna(0.0)
 
-    geral["Meta"] = meta_geral
-    cols_datas_geral = [c for c in geral.columns if c not in ["Regional", "Nucleo", "Setor", "Meta"]]
-    geral["Acum"] = geral[cols_datas_geral[-1]] if cols_datas_geral else pd.NA
+            df_data_raw = calcular_acum_ultimo_dia(df_data_raw, pen)
+            df_data_raw["Chave_Setor"] = df_data_raw["Nucleo"].astype(str) + "_" + df_data_raw["Setor"].astype(str)
 
-    cols = geral.columns.tolist()
-    for col in ["Meta", "Acum"]:
-        if col in cols: cols.remove(col)
-    cols.insert(3, "Acum")
-    cols.insert(4, "Meta")
-    geral = geral[cols]
-
-    geral_aggrid_raw = geral.copy()
-    for col in geral_aggrid_raw.columns:
-        geral_aggrid_raw[col] = geral_aggrid_raw[col].mask(pd.isna(geral_aggrid_raw[col]), None)
-
-    media_acum = geral["Acum"].apply(_to_float_or_none).dropna().mean()
-    media_meta = geral["Meta"].apply(_to_float_or_none).dropna().mean()
-    cor = get_dot_color(pen, media_acum, media_meta)
-    display_pen = nome_indicador.get(pen, pen)
-
-    # 🔴 ANTES ERA ASSIM:
-    # st.markdown(f"### {cor} {display_pen}")
-
-    # 🟢 AGORA FICA ASSIM (Com Expander):
-    # O parâmetro expanded=False faz começar fechado. Se quiser aberto, use True.
-    with st.expander(f"{cor} {display_pen}", expanded=False):
-
-        # TUDO ABAIXO PRECISA ESTAR INDENTADO (TAB) PARA DENTRO DO "WITH"
-
-        percentuais_js = json.dumps(list(PERCENTUAIS_LIST))
-        inteiros_js = json.dumps(list(INTEIROS_LIST))
-        decimais_js = json.dumps(list(DECIMAIS_LIST))
-        moeda_js = json.dumps(list(MOEDA_LIST))
-        lower_is_better_js = json.dumps(list(LOWER_IS_BETTER_LIST))
-
-        formatter_js = f"""
-            function(params) {{
-                var value = params.value; 
-                var penalidade = "{pen}".trim();
-                var num_value;
-                if (value === null || value === undefined) return ""; 
-                try {{ num_value = parseFloat(String(value)); }} catch (e) {{ return ""; }}
-                if (isNaN(num_value)) return ""; 
-                var percentuais = {percentuais_js};
-                var inteiros = {inteiros_js};
-                var decimais = {decimais_js};
-                var moedas = {moeda_js}; 
-
-                if (moedas.includes(penalidade)) {{
-                    return num_value.toLocaleString('pt-BR', {{ style: 'currency', currency: 'BRL' }});
-                }}
-                if (percentuais.includes(penalidade)) {{
-                    return (num_value * 100).toFixed(2).replace(/0+$/, '').replace(/\.$/, '') + "%";
-                }}
-                if (inteiros.includes(penalidade)) return Math.round(num_value).toString();
-                var str = decimais.includes(penalidade) ? num_value.toFixed(2) : num_value.toFixed(3);
-                if (num_value !== 0 && str.indexOf('.') > -1) {{
-                    str = str.replace(/0+$/, '').replace(/\.$/, '');
-                }}
-                if (num_value === 0) return "0";
-                return str;
-            }}
-            """
-
-        cell_style_js = f"""
-            function(params) {{
-                var penalidade = "{pen}".trim();
-                var lowerIsBetter = {lower_is_better_js};
-
-                function parseVal(v) {{
-                    if (v === null || v === undefined) return null;
-                    if (typeof v === 'number') return v;
-                    return parseFloat(String(v).replace(',', '.').replace('%', ''));
-                }}
-
-                var acum = parseVal(params.value);
-
-                var meta = null;
-                if (params.node && params.node.aggData && params.node.aggData.Meta !== undefined) {{
-                     meta = parseVal(params.node.aggData.Meta);
-                }} else if (params.data && params.data.Meta !== undefined) {{
-                     meta = parseVal(params.data.Meta);
-                }}
-
-                if (acum === null || meta === null) return null;
-
-                if (lowerIsBetter.includes(penalidade)) {{
-                    if (acum > meta) {{
-                        return {{'backgroundColor': '#a90015', 'color': '#ffffff', 'fontWeight': 'bold'}}; 
-                    }}
-                }} else {{
-                    if (acum < meta) {{
-                        return {{'backgroundColor': '#a90015', 'color': '#ffffff', 'fontWeight': 'bold'}};
-                    }}
-                }}
-
-                return null;
-            }}
-            """
-
-        getRowId_js = JsCode("""
-                function(params) {
-                    if (params.data.Setor) return params.data.Regional + params.data.Nucleo + params.data.Setor;
-                    if (params.data.Regional === 'GERAL') return 'GERAL_ROW';
-                    return Math.random().toString();
+            if pen in metas_por_setor:
+                df_data_raw["Meta"] = df_data_raw["Chave_Setor"].map(metas_por_setor.get(pen, {})).fillna(pd.NA)
+            else:
+                metas_fixas = {
+                    "Pontual%": 0.8, "ControleEmbarque": 0.9, "AcadDDS": 0.95, "AcadFixo": 0.9,
+                    "BaixaConducao%": 0.1, "DocsPendentes": 0, "DocsVencidBloq": 0,
+                    "EventosExcessos": 0.02, "Identificacao%": 0.98, "TripulacaoEscalada%": 0.96,
+                    "NotaConducao": 70.0
                 }
-            """)
+                df_data_raw["Meta"] = metas_fixas.get(pen, pd.NA)
 
-        data_agg_func = "avg" if pen in penalidades_media else "sum"
-        meta_agg_func = "avg" if pen in penalidades_media else "sum"
-        suppressAggFuncInHeader = True
+            df_data_raw["Meta"] = pd.to_numeric(df_data_raw["Meta"], errors='coerce')
+            df_data_raw.drop(columns=["Chave_Setor"], inplace=True)
 
-        gb = GridOptionsBuilder.from_dataframe(df_data_raw)
-        gb.configure_default_column(
-            resizable=True, suppressSizeToFit=False, wrapHeaderText=True, autoHeaderHeight=True
-        )
-        gb.configure_column("Regional", rowGroup=True, hide=True, width=120)
-        gb.configure_column("Nucleo", rowGroup=True, hide=True, width=120)
-        gb.configure_column("Setor", rowGroup=True, hide=True, width=120)
+            cols_data_to_check = [c for c in df_data_raw.columns if c not in ["Regional", "Nucleo", "Setor"]]
+            df_data_raw['has_data'] = df_data_raw[cols_data_to_check].notna().any(axis=1)
+            df_data_raw = df_data_raw[df_data_raw['has_data']].drop(columns=['has_data'])
 
-        gb.configure_column(
-            "Meta", headerName="Meta", pinned="left", width=110, minWidth=110, suppressSizeToFit=True,
-            aggFunc=meta_agg_func, valueFormatter=JsCode(formatter_js), type=['numericColumn', 'rightAligned']
-        )
+            if df_data_raw.empty:
+                st.warning(f"⚠️ Nenhum resultado para: **{nome_indicador.get(pen, pen)}**")
+                st.divider()
+                continue
 
-        gb.configure_column(
-            "Acum", headerName="Acum", pinned="left", width=110, minWidth=110, suppressSizeToFit=True,
-            aggFunc=data_agg_func, valueFormatter=JsCode(formatter_js), type=['numericColumn', 'rightAligned'],
-            cellStyle=JsCode(cell_style_js)
-        )
+            # Cálculo GERAL
+            cols_data_in_pivot_geral = [c for c in df_data_raw.columns if
+                                        c not in ["Regional", "Nucleo", "Setor", "Meta", "Acum"]]
+            if pen in penalidades_media:
+                geral_vals = df_data_raw[cols_data_in_pivot_geral].apply(
+                    lambda col: col[col.notna()].mean() if len(col[col.notna()]) > 0 else pd.NA, axis=0)
+            else:
+                geral_vals = df_data_raw[cols_data_in_pivot_geral].apply(lambda col: col.sum(), axis=0)
 
-        cols_data_in_pivot_aggrid = [c for c in df_data_raw.columns if
-                                     c not in ["Regional", "Nucleo", "Setor", "Meta", "Acum"]]
-        for col in cols_data_in_pivot_aggrid:
-            gb.configure_column(
-                col, headerName=col, width=85, minWidth=80, maxWidth=100, suppressSizeToFit=False,
-                aggFunc=data_agg_func, valueFormatter=JsCode(formatter_js), type=['numericColumn', 'rightAligned']
-            )
+            geral = pd.DataFrame([geral_vals]).astype(float)
+            geral["Regional"] = "GERAL"
+            geral["Nucleo"] = "-"
+            geral["Setor"] = "-"
+            geral = geral[["Regional", "Nucleo", "Setor"] + geral_vals.index.tolist()]
 
-        autoGroupColumnDef = {
-            "headerName": "Regional / Núcleo / Setor", "pinned": "left", "width": 280,
-            "minWidth": 250, "maxWidth": 350,
-            "cellRendererParams": {"suppressCount": True, "suppressLeafAfterColumns": True},
-            "wrapHeaderText": False, "autoHeaderHeight": False
-        }
+            if pen in metas_dinamicas:
+                df_meta_geral = df_merged[df_merged["Penalidades"] == metas_dinamicas.get(pen, "")].copy()
+                df_meta_geral["Data"] = pd.to_datetime(df_meta_geral["Data"], errors="coerce")
+                if not df_meta_geral.empty:
+                    nucleos_visiveis = df_data_raw["Nucleo"].unique().tolist()
+                    df_meta_geral = df_meta_geral[df_meta_geral["Nucleo"].isin(nucleos_visiveis)]
+                    df_meta_geral = df_meta_geral[
+                        (df_meta_geral["Data"].dt.date >= start_date) & (df_meta_geral["Data"].dt.date <= end_date)]
+                    if not df_meta_geral.empty:
+                        ultima_data = df_meta_geral["Data"].max()
+                        df_meta_geral = df_meta_geral[df_meta_geral["Data"] == ultima_data]
+                        meta_geral = df_meta_geral["Contagem"].mean() if pen == "VPML" else df_meta_geral[
+                            "Contagem"].sum()
+                    else:
+                        meta_geral = pd.NA
+                else:
+                    meta_geral = pd.NA
+            else:
+                meta_geral = metas_fixas.get(pen, pd.NA)
 
-        gb.configure_grid_options(
-            autoGroupColumnDef=autoGroupColumnDef, pinnedBottomRowData=geral_aggrid_raw.to_dict('records'),
-            groupDefaultExpanded=0, suppressAggFuncInHeader=suppressAggFuncInHeader, rangeSelection=True,
-            getRowId=getRowId_js, allow_unsafe_jscode=True, suppressSizeToFit=False, ensureDomOrder=True,
-            groupSuppressGroupRows=False, groupIncludeFooter=False, groupSuppressBlankAndFloatingRow=False,
-            suppressAggAtRoot=True, suppressColumnVirtualisation=True, rowBuffer=20
-        )
+            geral["Meta"] = meta_geral
+            cols_datas_geral = [c for c in geral.columns if c not in ["Regional", "Nucleo", "Setor", "Meta"]]
+            geral["Acum"] = geral[cols_datas_geral[-1]] if cols_datas_geral else pd.NA
 
-        grid_options = gb.build()
-        try:
-            AgGrid(
-                df_data_raw,
-                gridOptions=grid_options,
-                # 🔴 REMOVA esta linha, ela está causando o erro de altura zero:
-                # autoHeight=True,
+            cols = geral.columns.tolist()
+            for col in ["Meta", "Acum"]:
+                if col in cols: cols.remove(col)
+            cols.insert(3, "Acum")
+            cols.insert(4, "Meta")
+            geral = geral[cols]
 
-                # 🟢 ADICIONE UMA ALTURA FIXA PARA FORÇAR O RENDER
-                height=400,  # Use um valor que funcione bem para você (ex: 350, 400 ou 450)
+            geral_aggrid_raw = geral.copy()
+            for col in geral_aggrid_raw.columns:
+                geral_aggrid_raw[col] = geral_aggrid_raw[col].mask(pd.isna(geral_aggrid_raw[col]), None)
 
-                fit_columns_on_grid_load=False,
-                enable_enterprise_modules=True,
-                key=f"grid_{pen}_{filter_hash}",
-                allow_unsafe_jscode=True,
-            )
-        except Exception as e:
-            st.error(f"Erro tabela {pen}: {e}")
-            continue
-    # Fora do expander, removemos o divider pois o expander já cria uma separação visual
-    # st.divider()
+            media_acum = geral["Acum"].apply(_to_float_or_none).dropna().mean()
+            media_meta = geral["Meta"].apply(_to_float_or_none).dropna().mean()
+            cor = get_dot_color(pen, media_acum, media_meta)
+            display_pen = nome_indicador.get(pen, pen)
+
+            # Expander para o Indicador/Penalidade
+            with st.expander(f"{cor} {display_pen}", expanded=False):
+
+                percentuais_js = json.dumps(list(PERCENTUAIS_LIST))
+                inteiros_js = json.dumps(list(INTEIROS_LIST))
+                decimais_js = json.dumps(list(DECIMAIS_LIST))
+                moeda_js = json.dumps(list(MOEDA_LIST))
+                lower_is_better_js = json.dumps(list(LOWER_IS_BETTER_LIST))
+
+                formatter_js = f"""
+                    function(params) {{
+                        var value = params.value; 
+                        var penalidade = "{pen}".trim();
+                        var num_value;
+                        if (value === null || value === undefined) return ""; 
+                        try {{ num_value = parseFloat(String(value)); }} catch (e) {{ return ""; }}
+                        if (isNaN(num_value)) return ""; 
+                        var percentuais = {percentuais_js};
+                        var inteiros = {inteiros_js};
+                        var decimais = {decimais_js};
+                        var moedas = {moeda_js}; 
+
+                        if (moedas.includes(penalidade)) {{
+                            return num_value.toLocaleString('pt-BR', {{ style: 'currency', currency: 'BRL' }});
+                        }}
+                        if (percentuais.includes(penalidade)) {{
+                            return (num_value * 100).toFixed(2).replace(/0+$/, '').replace(/\.$/, '') + "%";
+                        }}
+                        if (inteiros.includes(penalidade)) return Math.round(num_value).toString();
+                        var str = decimais.includes(penalidade) ? num_value.toFixed(2) : num_value.toFixed(3);
+                        if (num_value !== 0 && str.indexOf('.') > -1) {{
+                            str = str.replace(/0+$/, '').replace(/\.$/, '');
+                        }}
+                        if (num_value === 0) return "0";
+                        return str;
+                    }}
+                    """
+
+                cell_style_js = f"""
+                    function(params) {{
+                        var penalidade = "{pen}".trim();
+                        var lowerIsBetter = {lower_is_better_js};
+
+                        function parseVal(v) {{
+                            if (v === null || v === undefined) return null;
+                            if (typeof v === 'number') return v;
+                            return parseFloat(String(v).replace(',', '.').replace('%', ''));
+                        }}
+
+                        var acum = parseVal(params.value);
+
+                        var meta = null;
+                        if (params.node && params.node.aggData && params.node.aggData.Meta !== undefined) {{
+                             meta = parseVal(params.node.aggData.Meta);
+                        }} else if (params.data && params.data.Meta !== undefined) {{
+                             meta = parseVal(params.data.Meta);
+                        }}
+
+                        if (acum === null || meta === null) return null;
+
+                        if (lowerIsBetter.includes(penalidade)) {{
+                            if (acum > meta) {{
+                                return {{'color': '#FF6868', 'fontWeight': 'bold'}}; 
+                            }}
+                        }} else {{
+                            if (acum < meta) {{
+                                return {{'color': '#FF6868', 'fontWeight': 'bold'}};
+                            }}
+                        }}
+
+                        return null;
+                    }}
+                    """
+
+                getRowId_js = JsCode("""
+                        function(params) {
+                            if (params.data.Setor) return params.data.Regional + params.data.Nucleo + params.data.Setor;
+                            if (params.data.Regional === 'GERAL') return 'GERAL_ROW';
+                            return Math.random().toString();
+                        }
+                    """)
+
+                data_agg_func = "avg" if pen in penalidades_media else "sum"
+                meta_agg_func = "avg" if pen in penalidades_media else "sum"
+                suppressAggFuncInHeader = True
+
+                gb = GridOptionsBuilder.from_dataframe(df_data_raw)
+                gb.configure_default_column(
+                    resizable=True, suppressSizeToFit=False, wrapHeaderText=True, autoHeaderHeight=True
+                )
+                gb.configure_column("Regional", rowGroup=True, hide=True, width=120)
+                gb.configure_column("Nucleo", rowGroup=True, hide=True, width=120)
+                gb.configure_column("Setor", rowGroup=False, hide=True, width=120)
+
+                gb.configure_column(
+                    "Meta", headerName="Meta", pinned="left", width=110, minWidth=110, suppressSizeToFit=True,
+                    aggFunc=meta_agg_func, valueFormatter=JsCode(formatter_js), type=['numericColumn', 'rightAligned']
+                )
+
+                gb.configure_column(
+                    "Acum", headerName="Acum", pinned="left", width=110, minWidth=110, suppressSizeToFit=True,
+                    aggFunc=data_agg_func, valueFormatter=JsCode(formatter_js), type=['numericColumn', 'rightAligned'],
+                    cellStyle=JsCode(cell_style_js)
+                )
+
+                cols_data_in_pivot_aggrid = [c for c in df_data_raw.columns if
+                                             c not in ["Regional", "Nucleo", "Setor", "Meta", "Acum"]]
+                for col in cols_data_in_pivot_aggrid:
+                    gb.configure_column(
+                        col, headerName=col, width=85, minWidth=80, maxWidth=100, suppressSizeToFit=False,
+                        aggFunc=data_agg_func, valueFormatter=JsCode(formatter_js),
+                        type=['numericColumn', 'rightAligned'],
+                        cellStyle=JsCode(cell_style_js)
+                    )
+
+                autoGroupColumnDef = {
+                    "headerName": "Regional / Núcleo / Setor", "pinned": "left", "width": 280,
+                    "minWidth": 250, "maxWidth": 350,
+                    "field": "Setor",  # <--- ADICIONE ESTA LINHA!
+                    "cellRendererParams": {"suppressCount": True, "suppressLeafAfterColumns": False},
+                    "wrapHeaderText": False, "autoHeaderHeight": False
+                }
+                gb.configure_grid_options(
+                    autoGroupColumnDef=autoGroupColumnDef, pinnedBottomRowData=geral_aggrid_raw.to_dict('records'),
+                    groupDefaultExpanded=0, suppressAggFuncInHeader=suppressAggFuncInHeader, rangeSelection=True,
+                    getRowId=getRowId_js, allow_unsafe_jscode=True, suppressSizeToFit=False, ensureDomOrder=True,
+                    groupSuppressGroupRows=False, groupIncludeFooter=False, groupSuppressBlankAndFloatingRow=True,
+                    suppressAggAtRoot=True, suppressColumnVirtualisation=True, rowBuffer=20
+                )
+
+                grid_options = gb.build()
+                try:
+                    AgGrid(
+                        df_data_raw,
+                        gridOptions=grid_options,
+                        height=400,
+                        fit_columns_on_grid_load=False,
+                        enable_enterprise_modules=True,
+                        key=f"grid_{pen}_{filter_hash}",
+                        allow_unsafe_jscode=True,
+                    )
+                except Exception as e:
+                    st.error(f"Erro tabela {pen}: {e}")
+                    continue
 
 st.markdown('</div>', unsafe_allow_html=True)
