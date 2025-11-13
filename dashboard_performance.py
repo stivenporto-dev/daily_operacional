@@ -538,7 +538,7 @@ for pen, nome_meta in metas_dinamicas.items():
 penalidades_media = {
     "Meta VPML", "VPML", "VPML%", "MetaAcid%", "MetaRecl%", "MetaReg%",
     "Pontual%", "ControleEmbarque", "AcadDDS", "AcadFixo", "Identificacao%",
-    "TripulacaoEscalada%", "BaixaConducao%", "NotaConducao", "BaixaConducao"
+    "TripulacaoEscalada%", "BaixaConducao%", "NotaConducao", "BaixaConducao","EventosExcessos"
 }
 
 # ===============================
@@ -911,6 +911,5 @@ for i, pen in enumerate(df_filt["Penalidades"].dropna().unique()):
     st.divider()
 
 st.markdown('</div>', unsafe_allow_html=True)
-
 
 
