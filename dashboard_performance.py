@@ -476,15 +476,21 @@ for tema in ordem_temas_fixa:
     if not indicadores_do_tema:
         continue
 
-    # 🟢 NOVO: Busca o ícone correspondente ao tema
+    # Busca o ícone correspondente ao tema
     icone_tema = TEMA_ICONE_MAP.get(tema, "❓")
 
+    # =======================================================
+    # <<< MUDANÇA AQUI: Deixar o expander do TEMA aberto >>>
+    # =======================================================
     # Cria um expander principal para o TEMA.
-    # 🟢 Usa o ícone e inicia expandido
-    with st.expander(f"## {icone_tema} **{tema}**", expanded=False):
+    with st.expander(f"## {icone_tema} **{tema}**", expanded=False):  # <-- MUDANÇA AQUI
 
-        # Loop interno que cria a tabela para CADA INDICADOR
+        # Loop para CADA INDICADOR
         for i, pen in enumerate(indicadores_do_tema):
+
+            # --- A LÓGICA DE PREPARAÇÃO DE DADOS COMEÇA AQUI ---
+            # (Exatamente como estava no seu código original)
+
             sub = df_filt[df_filt["Penalidades"] == pen].copy()
             if sub.empty: continue
 
@@ -539,8 +545,6 @@ for tema in ordem_temas_fixa:
             df_data_raw = df_data_raw[df_data_raw['has_data']].drop(columns=['has_data'])
 
             if df_data_raw.empty:
-                st.warning(f"⚠️ Nenhum resultado para: **{nome_indicador.get(pen, pen)}**")
-                st.divider()
                 continue
 
             # Cálculo GERAL
@@ -607,78 +611,86 @@ for tema in ordem_temas_fixa:
                 moeda_js = json.dumps(list(MOEDA_LIST))
                 lower_is_better_js = json.dumps(list(LOWER_IS_BETTER_LIST))
 
-                formatter_js = f"""
-                    function(params) {{
-                        var value = params.value; 
-                        var penalidade = "{pen}".trim();
-                        var num_value;
-                        if (value === null || value === undefined) return ""; 
-                        try {{ num_value = parseFloat(String(value)); }} catch (e) {{ return ""; }}
-                        if (isNaN(num_value)) return ""; 
-                        var percentuais = {percentuais_js};
-                        var inteiros = {inteiros_js};
-                        var decimais = {decimais_js};
-                        var moedas = {moeda_js}; 
+                # NOVO: JsCode para forçar o redimensionamento
+                onGridReady_js = JsCode("""
+                                function(params) {
+                                    // Força o grid a recalcular seu tamanho assim que é renderizado
+                                    params.api.sizeColumnsToFit();
+                                }
+                            """)
 
-                        if (moedas.includes(penalidade)) {{
-                            return num_value.toLocaleString('pt-BR', {{ style: 'currency', currency: 'BRL' }});
-                        }}
-                        if (percentuais.includes(penalidade)) {{
-                            return (num_value * 100).toFixed(2).replace(/0+$/, '').replace(/\.$/, '') + "%";
-                        }}
-                        if (inteiros.includes(penalidade)) return Math.round(num_value).toString();
-                        var str = decimais.includes(penalidade) ? num_value.toFixed(2) : num_value.toFixed(3);
-                        if (num_value !== 0 && str.indexOf('.') > -1) {{
-                            str = str.replace(/0+$/, '').replace(/\.$/, '');
-                        }}
-                        if (num_value === 0) return "0";
-                        return str;
-                    }}
-                    """
+                formatter_js = f"""
+                                function(params) {{
+                                    var value = params.value; 
+                                    var penalidade = "{pen}".trim();
+                                    var num_value;
+                                    if (value === null || value === undefined) return ""; 
+                                    try {{ num_value = parseFloat(String(value)); }} catch (e) {{ return ""; }}
+                                    if (isNaN(num_value)) return ""; 
+                                    var percentuais = {percentuais_js};
+                                    var inteiros = {inteiros_js};
+                                    var decimais = {decimais_js};
+                                    var moedas = {moeda_js}; 
+
+                                    if (moedas.includes(penalidade)) {{
+                                        return num_value.toLocaleString('pt-BR', {{ style: 'currency', currency: 'BRL' }});
+                                    }}
+                                    if (percentuais.includes(penalidade)) {{
+                                        return (num_value * 100).toFixed(2).replace(/0+$/, '').replace(/\.$/, '') + "%";
+                                    }}
+                                    if (inteiros.includes(penalidade)) return Math.round(num_value).toString();
+                                    var str = decimais.includes(penalidade) ? num_value.toFixed(2) : num_value.toFixed(3);
+                                    if (num_value !== 0 && str.indexOf('.') > -1) {{
+                                        str = str.replace(/0+$/, '').replace(/\.$/, '');
+                                    }}
+                                    if (num_value === 0) return "0";
+                                    return str;
+                                }}
+                                """
 
                 cell_style_js = f"""
-                    function(params) {{
-                        var penalidade = "{pen}".trim();
-                        var lowerIsBetter = {lower_is_better_js};
+                                function(params) {{
+                                    var penalidade = "{pen}".trim();
+                                    var lowerIsBetter = {lower_is_better_js};
 
-                        function parseVal(v) {{
-                            if (v === null || v === undefined) return null;
-                            if (typeof v === 'number') return v;
-                            return parseFloat(String(v).replace(',', '.').replace('%', ''));
-                        }}
+                                    function parseVal(v) {{
+                                        if (v === null || v === undefined) return null;
+                                        if (typeof v === 'number') return v;
+                                        return parseFloat(String(v).replace(',', '.').replace('%', ''));
+                                    }}
 
-                        var acum = parseVal(params.value);
+                                    var acum = parseVal(params.value);
 
-                        var meta = null;
-                        if (params.node && params.node.aggData && params.node.aggData.Meta !== undefined) {{
-                             meta = parseVal(params.node.aggData.Meta);
-                        }} else if (params.data && params.data.Meta !== undefined) {{
-                             meta = parseVal(params.data.Meta);
-                        }}
+                                    var meta = null;
+                                    if (params.node && params.node.aggData && params.node.aggData.Meta !== undefined) {{
+                                         meta = parseVal(params.node.aggData.Meta);
+                                    }} else if (params.data && params.data.Meta !== undefined) {{
+                                         meta = parseVal(params.data.Meta);
+                                    }}
 
-                        if (acum === null || meta === null) return null;
+                                    if (acum === null || meta === null) return null;
 
-                        if (lowerIsBetter.includes(penalidade)) {{
-                            if (acum > meta) {{
-                                return {{'color': '#FF6868', 'fontWeight': 'bold'}}; 
-                            }}
-                        }} else {{
-                            if (acum < meta) {{
-                                return {{'color': '#FF6868', 'fontWeight': 'bold'}};
-                            }}
-                        }}
+                                    if (lowerIsBetter.includes(penalidade)) {{
+                                        if (acum > meta) {{
+                                            return {{'color': '#FF6868', 'fontWeight': 'bold'}}; 
+                                        }}
+                                    }} else {{
+                                        if (acum < meta) {{
+                                            return {{'color': '#FF6868', 'fontWeight': 'bold'}};
+                                        }}
+                                    }}
 
-                        return null;
-                    }}
-                    """
+                                    return null;
+                                }}
+                                """
 
                 getRowId_js = JsCode("""
-                        function(params) {
-                            if (params.data.Setor) return params.data.Regional + params.data.Nucleo + params.data.Setor;
-                            if (params.data.Regional === 'GERAL') return 'GERAL_ROW';
-                            return Math.random().toString();
-                        }
-                    """)
+                                    function(params) {
+                                        if (params.data.Setor) return params.data.Regional + params.data.Nucleo + params.data.Setor;
+                                        if (params.data.Regional === 'GERAL') return 'GERAL_ROW';
+                                        return Math.random().toString();
+                                    }
+                                """)
 
                 data_agg_func = "avg" if pen in penalidades_media else "sum"
                 meta_agg_func = "avg" if pen in penalidades_media else "sum"
@@ -725,16 +737,16 @@ for tema in ordem_temas_fixa:
                     groupDefaultExpanded=0, suppressAggFuncInHeader=suppressAggFuncInHeader, rangeSelection=True,
                     getRowId=getRowId_js, allow_unsafe_jscode=True, suppressSizeToFit=False, ensureDomOrder=True,
                     groupSuppressGroupRows=False, groupIncludeFooter=False, groupSuppressBlankAndFloatingRow=True,
-                    suppressAggAtRoot=True, suppressColumnVirtualisation=True, rowBuffer=20
+                    suppressAggAtRoot=True, suppressColumnVirtualisation=True, rowBuffer=20,
+                    domLayout='autoHeight'  # <--- ADICIONE ESTA LINHA
                 )
-
                 grid_options = gb.build()
                 try:
                     AgGrid(
                         df_data_raw,
                         gridOptions=grid_options,
-                        height=400,
-                        fit_columns_on_grid_load=False,
+                        #height=400,
+                        fit_columns_on_grid_load=True,  # <--- MUDANÇA: de False para True (ajuda no trigger)
                         enable_enterprise_modules=True,
                         key=f"grid_{pen}_{filter_hash}",
                         allow_unsafe_jscode=True,
@@ -743,4 +755,5 @@ for tema in ordem_temas_fixa:
                     st.error(f"Erro tabela {pen}: {e}")
                     continue
 
+# A tag </div> final do seu arquivo
 st.markdown('</div>', unsafe_allow_html=True)
