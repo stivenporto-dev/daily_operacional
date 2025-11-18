@@ -20,38 +20,38 @@ hoje = date.today()
 # ESTILO FIXO
 # ===============================
 st.markdown("""
-    <style>
-    .fixed-header {
-        position: fixed;
-        top: 0; left: 0; right: 0;
-        width: 100%;
-        background-color: white;
-        z-index: 9999;
-        padding: 1rem 2rem 0.5rem 2rem; 
-        border-bottom: 2px solid #ddd;
-        box-shadow: 0 2px 5px rgbaa(0,0,0,0.05);
-    }
-    .content { margin-top: 30px; } 
-    .block-container {
-        padding: 1rem !important;
-        max-width: 100% !important;
-        margin: 0 auto !important;
-    }
-    h3 {
-        margin-top: 0rem !important;
-        margin-bottom: 0rem !important;
-    }
-    div[data-testid*="stVerticalBlock"] > div:last-child {
-        margin-bottom: 0rem !important; 
-    }
-    div[data-testid*="stVerticalBlock"] > div > div.ag-root-wrapper {
-        margin-bottom: 0rem !important;
-    }
-    hr {
-        display: none;
-    }
-    </style>
-""", unsafe_allow_html=True)
+        <style>
+        .fixed-header {
+            position: fixed;
+            top: 0; left: 0; right: 0;
+            width: 100%;
+            background-color: white;
+            z-index: 9999;
+            padding: 1rem 2rem 0.5rem 2rem; 
+            border-bottom: 2px solid #ddd;
+            box-shadow: 0 2px 5px rgbaa(0,0,0,0.05);
+        }
+        .content { margin-top: 30px; } 
+        .block-container {
+            padding: 1rem !important;
+            max-width: 100% !important;
+            margin: 0 auto !important;
+        }
+        h3 {
+            margin-top: 0rem !important;
+            margin-bottom: 0rem !important;
+        }
+        div[data-testid*="stVerticalBlock"] > div:last-child {
+            margin-bottom: 0rem !important; 
+        }
+        div[data-testid*="stVerticalBlock"] > div > div.ag-root-wrapper {
+            margin-bottom: 0rem !important;
+        }
+        hr {
+            display: none;
+        }
+        </style>
+    """, unsafe_allow_html=True)
 
 # ===============================
 # CABEÇALHO FIXO
@@ -358,13 +358,42 @@ with st.sidebar:
         st.stop()
 
     temas_visiveis = sorted(df_exib["Tema"].dropna().unique())
-    tema_sel = st.multiselect("Tema", temas_visiveis, key="tema_sel_key")
-    penalidades_visiveis = sorted(df_exib["Penalidades"].dropna().unique())
-    penalidades_sel = st.multiselect("Penalidades", penalidades_visiveis, key="penalidades_sel_key")
-    regional_sel = st.multiselect("Regional", sorted(df_exib["Regional"].dropna().unique()), key="regional_sel_key")
-    nucleo_sel = st.multiselect("Núcleo", sorted(df_exib["Nucleo"].dropna().unique()), key="nucleo_sel_key")
-    setor_sel = st.multiselect("Setor", sorted(df_exib["Setor"].dropna().unique()), key="setor_sel_key")
+    # Adicione o parâmetro placeholder em cada multiselect
+    tema_sel = st.multiselect(
+        "Tema",
+        temas_visiveis,
+        key="tema_sel_key",
+        placeholder="Selecione uma opção"
+    )
 
+    penalidades_visiveis = sorted(df_exib["Penalidades"].dropna().unique())
+    penalidades_sel = st.multiselect(
+        "Penalidades",
+        penalidades_visiveis,
+        key="penalidades_sel_key",
+        placeholder="Selecione uma opção"
+    )
+
+    regional_sel = st.multiselect(
+        "Regional",
+        sorted(df_exib["Regional"].dropna().unique()),
+        key="regional_sel_key",
+        placeholder="Selecione uma opção"
+    )
+
+    nucleo_sel = st.multiselect(
+        "Núcleo",
+        sorted(df_exib["Nucleo"].dropna().unique()),
+        key="nucleo_sel_key",
+        placeholder="Selecione uma opção"
+    )
+
+    setor_sel = st.multiselect(
+        "Setor",
+        sorted(df_exib["Setor"].dropna().unique()),
+        key="setor_sel_key",
+        placeholder="Selecione uma opção"
+    )
     try:
         min_data_dt = df_exib["Data"].min().to_pydatetime()
         min_period_date = min_data_dt.date()
@@ -386,7 +415,7 @@ with st.sidebar:
 try:
     # Convertemos para string para garantir estabilidade do hash
     filter_tuple = (
-    str(tema_sel), str(penalidades_sel), str(regional_sel), str(nucleo_sel), str(setor_sel), str(periodo_sel))
+        str(tema_sel), str(penalidades_sel), str(regional_sel), str(nucleo_sel), str(setor_sel), str(periodo_sel))
     filter_hash = hash(filter_tuple)
 except:
     filter_hash = "static_hash_fallback"  # Valor fixo para não quebrar a renderização
@@ -613,84 +642,84 @@ for tema in ordem_temas_fixa:
 
                 # NOVO: JsCode para forçar o redimensionamento
                 onGridReady_js = JsCode("""
-                                function(params) {
-                                    // Força o grid a recalcular seu tamanho assim que é renderizado
-                                    params.api.sizeColumnsToFit();
-                                }
-                            """)
-
-                formatter_js = f"""
-                                function(params) {{
-                                    var value = params.value; 
-                                    var penalidade = "{pen}".trim();
-                                    var num_value;
-                                    if (value === null || value === undefined) return ""; 
-                                    try {{ num_value = parseFloat(String(value)); }} catch (e) {{ return ""; }}
-                                    if (isNaN(num_value)) return ""; 
-                                    var percentuais = {percentuais_js};
-                                    var inteiros = {inteiros_js};
-                                    var decimais = {decimais_js};
-                                    var moedas = {moeda_js}; 
-
-                                    if (moedas.includes(penalidade)) {{
-                                        return num_value.toLocaleString('pt-BR', {{ style: 'currency', currency: 'BRL' }});
-                                    }}
-                                    if (percentuais.includes(penalidade)) {{
-                                        return (num_value * 100).toFixed(2).replace(/0+$/, '').replace(/\.$/, '') + "%";
-                                    }}
-                                    if (inteiros.includes(penalidade)) return Math.round(num_value).toString();
-                                    var str = decimais.includes(penalidade) ? num_value.toFixed(2) : num_value.toFixed(3);
-                                    if (num_value !== 0 && str.indexOf('.') > -1) {{
-                                        str = str.replace(/0+$/, '').replace(/\.$/, '');
-                                    }}
-                                    if (num_value === 0) return "0";
-                                    return str;
-                                }}
-                                """
-
-                cell_style_js = f"""
-                                function(params) {{
-                                    var penalidade = "{pen}".trim();
-                                    var lowerIsBetter = {lower_is_better_js};
-
-                                    function parseVal(v) {{
-                                        if (v === null || v === undefined) return null;
-                                        if (typeof v === 'number') return v;
-                                        return parseFloat(String(v).replace(',', '.').replace('%', ''));
-                                    }}
-
-                                    var acum = parseVal(params.value);
-
-                                    var meta = null;
-                                    if (params.node && params.node.aggData && params.node.aggData.Meta !== undefined) {{
-                                         meta = parseVal(params.node.aggData.Meta);
-                                    }} else if (params.data && params.data.Meta !== undefined) {{
-                                         meta = parseVal(params.data.Meta);
-                                    }}
-
-                                    if (acum === null || meta === null) return null;
-
-                                    if (lowerIsBetter.includes(penalidade)) {{
-                                        if (acum > meta) {{
-                                            return {{'color': '#FF6868', 'fontWeight': 'bold'}}; 
-                                        }}
-                                    }} else {{
-                                        if (acum < meta) {{
-                                            return {{'color': '#FF6868', 'fontWeight': 'bold'}};
-                                        }}
-                                    }}
-
-                                    return null;
-                                }}
-                                """
-
-                getRowId_js = JsCode("""
                                     function(params) {
-                                        if (params.data.Setor) return params.data.Regional + params.data.Nucleo + params.data.Setor;
-                                        if (params.data.Regional === 'GERAL') return 'GERAL_ROW';
-                                        return Math.random().toString();
+                                        // Força o grid a recalcular seu tamanho assim que é renderizado
+                                        params.api.sizeColumnsToFit();
                                     }
                                 """)
+
+                formatter_js = f"""
+                                    function(params) {{
+                                        var value = params.value; 
+                                        var penalidade = "{pen}".trim();
+                                        var num_value;
+                                        if (value === null || value === undefined) return ""; 
+                                        try {{ num_value = parseFloat(String(value)); }} catch (e) {{ return ""; }}
+                                        if (isNaN(num_value)) return ""; 
+                                        var percentuais = {percentuais_js};
+                                        var inteiros = {inteiros_js};
+                                        var decimais = {decimais_js};
+                                        var moedas = {moeda_js}; 
+
+                                        if (moedas.includes(penalidade)) {{
+                                            return num_value.toLocaleString('pt-BR', {{ style: 'currency', currency: 'BRL' }});
+                                        }}
+                                        if (percentuais.includes(penalidade)) {{
+                                            return (num_value * 100).toFixed(2).replace(/0+$/, '').replace(/\.$/, '') + "%";
+                                        }}
+                                        if (inteiros.includes(penalidade)) return Math.round(num_value).toString();
+                                        var str = decimais.includes(penalidade) ? num_value.toFixed(2) : num_value.toFixed(3);
+                                        if (num_value !== 0 && str.indexOf('.') > -1) {{
+                                            str = str.replace(/0+$/, '').replace(/\.$/, '');
+                                        }}
+                                        if (num_value === 0) return "0";
+                                        return str;
+                                    }}
+                                    """
+
+                cell_style_js = f"""
+                                    function(params) {{
+                                        var penalidade = "{pen}".trim();
+                                        var lowerIsBetter = {lower_is_better_js};
+
+                                        function parseVal(v) {{
+                                            if (v === null || v === undefined) return null;
+                                            if (typeof v === 'number') return v;
+                                            return parseFloat(String(v).replace(',', '.').replace('%', ''));
+                                        }}
+
+                                        var acum = parseVal(params.value);
+
+                                        var meta = null;
+                                        if (params.node && params.node.aggData && params.node.aggData.Meta !== undefined) {{
+                                             meta = parseVal(params.node.aggData.Meta);
+                                        }} else if (params.data && params.data.Meta !== undefined) {{
+                                             meta = parseVal(params.data.Meta);
+                                        }}
+
+                                        if (acum === null || meta === null) return null;
+
+                                        if (lowerIsBetter.includes(penalidade)) {{
+                                            if (acum > meta) {{
+                                                return {{'color': '#FF6868', 'fontWeight': 'bold'}}; 
+                                            }}
+                                        }} else {{
+                                            if (acum < meta) {{
+                                                return {{'color': '#FF6868', 'fontWeight': 'bold'}};
+                                            }}
+                                        }}
+
+                                        return null;
+                                    }}
+                                    """
+
+                getRowId_js = JsCode("""
+                                        function(params) {
+                                            if (params.data.Setor) return params.data.Regional + params.data.Nucleo + params.data.Setor;
+                                            if (params.data.Regional === 'GERAL') return 'GERAL_ROW';
+                                            return Math.random().toString();
+                                        }
+                                    """)
 
                 data_agg_func = "avg" if pen in penalidades_media else "sum"
                 meta_agg_func = "avg" if pen in penalidades_media else "sum"
@@ -745,7 +774,7 @@ for tema in ordem_temas_fixa:
                     AgGrid(
                         df_data_raw,
                         gridOptions=grid_options,
-                        #height=400,
+                        # height=400,
                         fit_columns_on_grid_load=True,  # <--- MUDANÇA: de False para True (ajuda no trigger)
                         enable_enterprise_modules=True,
                         key=f"grid_{pen}_{filter_hash}",
