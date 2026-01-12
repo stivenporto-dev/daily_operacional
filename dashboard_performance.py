@@ -158,10 +158,10 @@ def generate_monthly_periods(min_date: date, today: date, max_data_date: date):
 
 PERCENTUAIS_LIST = {"Meta VPML", "VPML", "Pontual%", "ControleEmbarque",
                     "AcadDDS", "AcadFixo", "Identificacao%", "TripulacaoEscalada%", "BaixaConducao%",
-                    "MetaRecl%", "MetaAcid%", "VPML%"}
+                    "MetaRecl%", "MetaAcid%", "VPML%", "Deslocamento%", "MetaTransito%", "%DesviodeEscala"}
 INTEIROS_LIST = {"DocsPendentes", "DocsVencidBloq", "Reclamacoes", "Acidentes"}
-DECIMAIS_LIST = {"NotaConducao", "EventosExcessos", "BaixaConducao"}
-MOEDA_LIST = {"MultasRegulatorias"}
+DECIMAIS_LIST = {"NotaConducao", "EventosExcessos", "BaixaConducao", "Excessos Não Identificados"}
+MOEDA_LIST = {"MultasRegulatorias", "Multas Transito"}
 # Lista de indicadores onde "MENOR é MELHOR" (Exceder a meta é ruim/vermelho)
 LOWER_IS_BETTER_LIST = {"BaixaConducao%", "MultasRegulatorias", "DocsPendentes", "DocsVencidBloq",
                         "Reclamacoes", "Acidentes", "VPML", "EventosExcessos"}
@@ -221,7 +221,7 @@ def get_dot_color(penalidade, acum, meta):
         elif acum_val == meta_val:
             return "🟡"
         else:
-            return "🔴"
+            return "🔴"    
 
 
 nome_indicador = {
@@ -241,6 +241,10 @@ nome_indicador = {
     "Reclamacoes": "Reclamações",
     "Acidentes": "Sinistros",
     "PendIdentificacao": "Pendência de Identificacao",
+    "Multas Transito": "Multas de Trânsito",
+    "Excessos Não Identificados": "Excessos Não Identificados",
+    "Deslocamento%": "Deslocamento Identificado",
+    "%DesviodeEscala": "Desvio de Escala Programada",
 }
 
 INDICADOR_TEMA_MAP = {
@@ -292,6 +296,16 @@ INDICADOR_TEMA_MAP = {
     "KmRodado": "Geral",
     "ViagensProg": "Geral",
     "Vendas": "Geral",
+    "Multas Transito": "Multas de Trânsito",
+    "PenalMultastransito": "Multas de Trânsito"
+    "MetaTransito%": "Multas de Trânsito"
+    "MetaMultastransito": "Multas de Trânsito"
+    "Excessos Não Identificados": "Excessos Não Identificados",
+    "PenalExcessosNãoIdentificados": "Excessos de Velocidade"
+    "Deslocamento%": "Deslocamento Identificado",
+    "PenalDeslocamento": "Identificação de Condutor"
+    "%DesviodeEscala": "Desvio de Escala Programada",
+    "PenalDesviodeEscala": "Escala de Tripulantes - OPTZ"
 }
 
 # =======================================================
@@ -305,7 +319,8 @@ TEMA_ICONE_MAP = {
     "Treinamentos EAD": "🎓",
     "Excessos de Velocidade": "🚨",
     "Pontualidade": "⏱️",
-    "Multas Regulatórias": "💰",
+    "Multas Regulatórias": "⚠️💵",
+    "Multas de Trânsito": "🚦🧾🚗",
     "Escala de Tripulantes - OPTZ": "👥",
     "Identificação de Condutor": "👤",
     "Reclamações": "🗣️",
@@ -320,7 +335,7 @@ TEMA_ICONE_MAP = {
 try:
     df_nucleos = carregar_nucleos_google()
     url_base = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQt4btv46n1B98NZscSD8hz78_x2mUHlKWnXe3z4mL1vJWeymx4RMgoV58N4OLV2sG2U_GBj5AcTGVQ/"
-    gids = ["0", "1688682064", "1552712710"]
+    gids = ["0", "1688682064", "1552712710","363880417"]
     df_daily = carregar_daily_google(gids, url_base)
 
     if df_daily.empty or df_nucleos.empty:
@@ -345,7 +360,7 @@ except Exception as e:
 penalidades_ocultas = {
     "Meta VPML", "MetaReclamacoes", "MetaAcidentes", "MetaMultasReg",
     "MetaAcid%", "VPML%", "MetaReg%", "MetaRecl%", "ViagensProg",
-    "MotsAtivos", "KmRodado", "Vendas", "BaixaConducao"
+    "MotsAtivos", "KmRodado", "Vendas", "BaixaConducao", "MetaTransito%", "MetaMultastransito"
 }
 df_exib = df_merged[~df_merged["Penalidades"].str.startswith("Penal", na=False)]
 df_exib = df_exib[~df_exib["Penalidades"].isin(penalidades_ocultas)]
@@ -437,7 +452,7 @@ if df_filt.empty or df_filt["Penalidades"].dropna().empty:
 # ===============================
 metas_dinamicas = {
     "VPML": "Meta VPML", "Reclamacoes": "MetaReclamacoes",
-    "Acidentes": "MetaAcidentes", "MultasRegulatorias": "MetaMultasReg"
+    "Acidentes": "MetaAcidentes", "MultasRegulatorias": "MetaMultasReg", "Multas Transito": "MetaMultastransito"
 }
 metas_por_setor = {}
 for pen, nome_meta in metas_dinamicas.items():
@@ -462,7 +477,7 @@ for pen, nome_meta in metas_dinamicas.items():
 penalidades_media = {
     "Meta VPML", "VPML", "VPML%", "MetaAcid%", "MetaRecl%", "MetaReg%",
     "Pontual%", "ControleEmbarque", "AcadDDS", "AcadFixo", "Identificacao%",
-    "TripulacaoEscalada%", "BaixaConducao%", "NotaConducao", "BaixaConducao", "EventosExcessos"
+    "TripulacaoEscalada%", "BaixaConducao%", "NotaConducao", "BaixaConducao", "EventosExcessos", "Excessos Não Identificados", "Deslocamento%", "%DesviodeEscala"
 }
 
 # =======================================================
@@ -559,10 +574,10 @@ for tema in ordem_temas_fixa:
                 df_data_raw["Meta"] = df_data_raw["Chave_Setor"].map(metas_por_setor.get(pen, {})).fillna(pd.NA)
             else:
                 metas_fixas = {
-                    "Pontual%": 0.8, "ControleEmbarque": 0.9, "AcadDDS": 0.95, "AcadFixo": 0.9,
+                    "Pontual%": 0.8, "ControleEmbarque": 0.95, "AcadDDS": 0.98, "AcadFixo": 0.9,
                     "BaixaConducao%": 0.1, "DocsPendentes": 0, "DocsVencidBloq": 0,
                     "EventosExcessos": 0.02, "Identificacao%": 0.98, "TripulacaoEscalada%": 0.96,
-                    "NotaConducao": 70.0
+                    "NotaConducao": 70.0, "Deslocamento%": 0.90, "%DesviodeEscala": 0.15, "Excessos Não Identificados": 0.25 
                 }
                 df_data_raw["Meta"] = metas_fixas.get(pen, pd.NA)
 
@@ -786,3 +801,4 @@ for tema in ordem_temas_fixa:
 
 # A tag </div> final do seu arquivo
 st.markdown('</div>', unsafe_allow_html=True)
+
