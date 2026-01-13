@@ -400,7 +400,7 @@ INDICADOR_TEMA_MAP = {
     "Multas Transito": "Multas de Trânsito",
     "PenalMultastransito": "Multas de Trânsito",
     "MetaTransito%": "Multas de Trânsito",
-    "MetaMultastransito": "Multas de Trânsito",
+    "Meta_MultasTransito": "Multas de Trânsito",
     "Excessos Não Identificados": "Excessos de Velocidade",
     "PenalExcessosNãoIdentificados": "Excessos de Velocidade",
     "Deslocamento%": "Identificação de Condutor",
@@ -465,7 +465,7 @@ except Exception as e:
 penalidades_ocultas = {
     "Meta VPML", "MetaReclamacoes", "MetaAcidentes", "MetaMultasReg",
     "MetaAcid%", "VPML%", "MetaReg%", "MetaRecl%", "ViagensProg",
-    "MotsAtivos", "KmRodado", "Vendas", "BaixaConducao", "MetaTransito%", "MetaMultastransito"
+    "MotsAtivos", "KmRodado", "Vendas", "BaixaConducao", "MetaTransito%", "Meta_MultasTransito"
 }
 df_exib = df_merged[~df_merged["Penalidades"].str.startswith("Penal", na=False)]
 df_exib = df_exib[~df_exib["Penalidades"].isin(penalidades_ocultas)]
@@ -557,7 +557,7 @@ if df_filt.empty or df_filt["Penalidades"].dropna().empty:
 # ===============================
 metas_dinamicas = {
     "VPML": "Meta VPML", "Reclamacoes": "MetaReclamacoes",
-    "Acidentes": "MetaAcidentes", "MultasRegulatorias": "MetaMultasReg", "Multas Transito": "MetaMultastransito"
+    "Acidentes": "MetaAcidentes", "MultasRegulatorias": "MetaMultasReg", "Multas Transito": "Meta_MultasTransito"
 }
 metas_por_setor = {}
 for pen, nome_meta in metas_dinamicas.items():
@@ -906,6 +906,7 @@ for tema in ordem_temas_fixa:
 
 # A tag </div> final do seu arquivo
 st.markdown('</div>', unsafe_allow_html=True)
+
 
 
 
