@@ -31,11 +31,10 @@ def encontrar_tables(obj):
             if resultado: return resultado
     return None
 
-@st.cache_data(ttl=3600, show_spinner="Aguarde enquanto os dados estão sendo carregados...")
+@st.cache_data(ttl=86400, show_spinner="Consolidando dados do Drive...") # Aumentado para 24h
 def carregar_jsons_drive_privado(folder_id):
     env_name = "GOOGLE_APPLICATION_CREDENTIALS_JSON"
     if env_name not in os.environ:
-        st.error(f"Erro: Variável {env_name} não encontrada.")
         return pd.DataFrame()
 
     service_account_info = json.loads(os.environ[env_name])
@@ -45,68 +44,75 @@ def carregar_jsons_drive_privado(folder_id):
     )
     service = build("drive", "v3", credentials=creds)
 
-    # 1. Lista todos os arquivos da pasta para pegar a data do nome do arquivo
+    # OTIMIZAÇÃO: Listar arquivos ordenados por data de modificação (os mais recentes primeiro)
     results = service.files().list(
-        q=f"'{folder_id}' in parents",
-        fields="files(id, name)",
-        pageSize=1000
+        q=f"'{folder_id}' in parents and trashed = false",
+        fields="files(id, name, mimeType)",
+        orderBy="modifiedTime desc",
+        pageSize=100 # Limite para os 100 arquivos mais recentes para evitar 503
     ).execute()
     
     files = results.get("files", [])
-    if not files:
-        st.warning("Nenhum arquivo encontrado na pasta do Drive. Verifique as permissões.")
-        return pd.DataFrame()
-
     dfs = []
-    COLUNAS_DESEJADAS = ['Penalidades', 'Contagem', 'Mes', 'PontuacaoFinal', 'Programa', 'Chave2', 'Data']
 
     for f in files:
-        # Pega a data do nome do arquivo (ex: 2024-05-10) para preencher a coluna 'Data'
-        match_data = re.search(r'\d{4}-\d{2}-\d{2}', f['name'])
-        data_arquivo = match_data.group(0) if match_data else None
+        if "json" in f["mimeType"] or f["name"].endswith(".json"):
+            try:
+                request = service.files().get_media(fileId=f["id"])
+                fh = io.BytesIO()
+                downloader = MediaIoBaseDownload(fh, request)
+                done = False
+                while not done:
+                    _, done = downloader.next_chunk()
 
-        try:
-            request = service.files().get_media(fileId=f["id"])
-            fh = io.BytesIO()
-            downloader = MediaIoBaseDownload(fh, request)
-            done = False
-            while not done:
-                _, done = downloader.next_chunk()
-            
-            fh.seek(0)
-            conteudo_json = json.load(fh)
-            
-            tables = encontrar_tables(conteudo_json)
-            if not tables: continue
+                fh.seek(0)
+                data = json.load(fh)
+                
+                # Use a mesma lógica de busca profunda 'encontrar_tables' que discutimos
+                tables = encontrar_tables(data) 
+                if not tables: continue
 
-            for table in tables:
-                rows = table.get('rows', [])
-                if not rows: continue
+                for table in tables:
+                    if "rows" in table:
+                        df_temp = pd.DataFrame(table["rows"])
+                        # Limpeza de colunas e preenchimento de data conforme seu código
+                        dfs.append(df_temp)
+            except Exception:
+                continue
 
-                # Transforma a lista de linhas em DataFrame
-                df_temp = pd.DataFrame(rows)
+    return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
-                # Limpa os nomes das colunas: [Penalidades] -> Penalidades
-                df_temp.columns = [limpar_nome_coluna(c) for c in df_temp.columns]
-
-                # Filtra apenas colunas que queremos e existem no arquivo
-                colunas_presentes = [c for c in COLUNAS_DESEJADAS if c in df_temp.columns]
-                df_temp = df_temp[colunas_presentes]
-
-                # Se não havia coluna 'Data' dentro do JSON, usa a data do nome do arquivo
-                if 'Data' not in df_temp.columns and data_arquivo:
-                    df_temp['Data'] = data_arquivo
-
-                dfs.append(df_temp)
-
-        except Exception as e:
-            st.warning(f"Erro ao processar arquivo {f['name']}: {e}")
-
-    if not dfs:
-        st.error("Nenhum dado válido extraído dos JSONs.")
+@st.cache_data(ttl=86400, show_spinner="Consolidando dados... Por favor, aguarde.")
+def preparar_dataframe_final(folder_id):
+    # 1. Carrega os JSONs do Drive (usa o cache da função original)
+    df_raw = carregar_jsons_drive_privado(folder_id)
+    
+    if df_raw.empty:
         return pd.DataFrame()
 
-    return pd.concat(dfs, ignore_index=True)
+    # 2. Carrega a planilha de núcleos
+    df_n = carregar_nucleos_google()
+
+    # 3. Processamento que antes ficava "solto" e lento
+    df_raw["Data"] = pd.to_datetime(df_raw["Data"], errors="coerce")
+    
+    # 4. Merge
+    df_final = df_raw.merge(
+        df_n[["Chave", "Nucleo", "Regional", "Setor"]],
+        left_on="Chave2", right_on="Chave", how="left"
+    )
+    
+    # 5. Limpeza de colunas e conversão numérica
+    if "Chave" in df_final.columns:
+        df_final.drop(columns=["Chave"], inplace=True)
+        
+    df_final["Contagem"] = pd.to_numeric(df_final["Contagem"], errors='coerce').astype(float)
+    
+    # 6. Mapeamento de Tema (usa o INDICADOR_TEMA_MAP que está no seu código)
+    df_final["Tema"] = df_final["Penalidades"].map(INDICADOR_TEMA_MAP).fillna("Outros")
+    
+    return df_final
+
 # ===============================
 # CONFIGURAÇÃO DA PÁGINA
 # ===============================
@@ -180,28 +186,28 @@ def converter_data_robusta(x):
     return pd.to_datetime(x, dayfirst=True, errors="coerce")
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
-def carregar_daily_google(gids, url_base):
-    abas = []
-    for gid in gids:
-        url_csv = f"{url_base}pub?gid={gid}&single=true&output=csv"
-        try:
-            df = pd.read_csv(url_csv, encoding="utf-8")
-            df.columns = df.columns.str.strip()
-            if "Data" in df.columns:
-                df["Data"] = df["Data"].apply(converter_data_robusta)
-            if "Contagem" in df.columns:
-                df["Contagem"] = pd.to_numeric(
-                    df["Contagem"].astype(str).str.replace(",", ".", regex=False),
-                    errors="coerce"
-                )
-            abas.append(df)
-        except Exception as e:
-            st.error(f"Erro ao carregar aba {gid}: {e}")
-    if abas:
-        return pd.concat(abas, ignore_index=True)
-    else:
-        return pd.DataFrame()
+# @st.cache_data(ttl=3600, show_spinner=False)
+# def carregar_daily_google(gids, url_base):
+#     abas = []
+#     for gid in gids:
+#         url_csv = f"{url_base}pub?gid={gid}&single=true&output=csv"
+#         try:
+#             df = pd.read_csv(url_csv, encoding="utf-8")
+#             df.columns = df.columns.str.strip()
+#             if "Data" in df.columns:
+#                 df["Data"] = df["Data"].apply(converter_data_robusta)
+#             if "Contagem" in df.columns:
+#                 df["Contagem"] = pd.to_numeric(
+#                     df["Contagem"].astype(str).str.replace(",", ".", regex=False),
+#                     errors="coerce"
+#                 )
+#             abas.append(df)
+#         except Exception as e:
+#             st.error(f"Erro ao carregar aba {gid}: {e}")
+#     if abas:
+#         return pd.concat(abas, ignore_index=True)
+#     else:
+#         return pd.DataFrame()
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -431,34 +437,16 @@ TEMA_ICONE_MAP = {
 }
 
 # ===============================
-# CARREGAR DADOS (APENAS DRIVE PRIVADO)
+# CARREGAR DADOS (CENTRALIZADO COM CACHE)
 # ===============================
-try:
-    df_nucleos = carregar_nucleos_google()
+ID_PASTA_DRIVE = "1kQ0Hs1A_6JKUOXleBScT1C1ehpWM5_Vp"
 
-    # Busca apenas os JSONs da pasta privada
-    ID_PASTA_DRIVE = "1kQ0Hs1A_6JKUOXleBScT1C1ehpWM5_Vp"
-    df_daily = carregar_jsons_drive_privado(ID_PASTA_DRIVE)
+# Agora chamamos a função unificada
+df_merged = preparar_dataframe_final(ID_PASTA_DRIVE)
 
-    if df_daily.empty:
-        st.error("Erro: Nenhum arquivo JSON encontrado na pasta do Drive.")
-        st.stop()
-    
-    df_daily["Data"] = pd.to_datetime(df_daily["Data"], errors="coerce")
-
-    # O restante do processamento (Merge com núcleos) continua igual
-    df_merged = df_daily.merge(
-        df_nucleos[["Chave", "Nucleo", "Regional", "Setor"]],
-        left_on="Chave2", right_on="Chave", how="left"
-    )
-    df_merged.drop(columns=["Chave"], inplace=True)
-    df_merged["Contagem"] = pd.to_numeric(df_merged["Contagem"], errors='coerce').astype(float)
-    df_merged["Tema"] = df_merged["Penalidades"].map(INDICADOR_TEMA_MAP).fillna("Outros")
-
-except Exception as e:
-    st.error(f"Erro ao processar dados: {e}")
+if df_merged.empty:
+    st.error("Erro: Nenhum dado disponível ou falha na conexão com o Drive.")
     st.stop()
-
 # ===============================
 # FILTROS
 # ===============================
@@ -906,6 +894,7 @@ for tema in ordem_temas_fixa:
 
 # A tag </div> final do seu arquivo
 st.markdown('</div>', unsafe_allow_html=True)
+
 
 
 
