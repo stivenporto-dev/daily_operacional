@@ -12,13 +12,15 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 import re # Adicione no topo do arquivo junto com os outros imports
 
+# --- FUNÇÕES DE APOIO ---
+
 def limpar_nome_coluna(coluna):
-    # Procura por texto dentro de colchetes: [Nome] -> Nome
+    """Remove colchetes dos nomes das colunas: [Data] -> Data"""
     match = re.search(r'\[(.*?)\]', str(coluna))
     return match.group(1) if match else str(coluna)
 
 def encontrar_tables(obj):
-    # Busca recursiva pela chave 'tables' (igual ao seu encontrarTables em JS)
+    """Busca recursiva pela chave 'tables' no JSON"""
     if isinstance(obj, dict):
         if 'tables' in obj and isinstance(obj['tables'], list):
             return obj['tables']
@@ -31,88 +33,116 @@ def encontrar_tables(obj):
             if resultado: return resultado
     return None
 
-@st.cache_data(ttl=86400, show_spinner="Consolidando dados do Drive...") # Aumentado para 24h
+# --- CARREGAMENTO DO DRIVE ---
+
+@st.cache_data(ttl=86400, show_spinner="Buscando JSONs no Drive...")
 def carregar_jsons_drive_privado(folder_id):
     env_name = "GOOGLE_APPLICATION_CREDENTIALS_JSON"
     if env_name not in os.environ:
+        st.error("Variável de ambiente das credenciais não encontrada.")
         return pd.DataFrame()
 
-    service_account_info = json.loads(os.environ[env_name])
-    creds = service_account.Credentials.from_service_account_info(
-        service_account_info,
-        scopes=["https://www.googleapis.com/auth/drive.readonly"]
-    )
-    service = build("drive", "v3", credentials=creds)
+    try:
+        service_account_info = json.loads(os.environ[env_name])
+        creds = service_account.Credentials.from_service_account_info(
+            service_account_info,
+            scopes=["https://www.googleapis.com/auth/drive.readonly"]
+        )
+        service = build("drive", "v3", credentials=creds)
 
-    # OTIMIZAÇÃO: Listar arquivos ordenados por data de modificação (os mais recentes primeiro)
-    results = service.files().list(
-        q=f"'{folder_id}' in parents and trashed = false",
-        fields="files(id, name, mimeType)",
-        orderBy="modifiedTime desc",
-        pageSize=100 # Limite para os 100 arquivos mais recentes para evitar 503
-    ).execute()
-    
-    files = results.get("files", [])
-    dfs = []
+        results = service.files().list(
+            q=f"'{folder_id}' in parents and trashed = false",
+            fields="files(id, name, mimeType)",
+            orderBy="modifiedTime desc",
+            pageSize=100 
+        ).execute()
+        
+        files = results.get("files", [])
+        dfs = []
 
-    for f in files:
-        if "json" in f["mimeType"] or f["name"].endswith(".json"):
-            try:
-                request = service.files().get_media(fileId=f["id"])
-                fh = io.BytesIO()
-                downloader = MediaIoBaseDownload(fh, request)
-                done = False
-                while not done:
-                    _, done = downloader.next_chunk()
+        for f in files:
+            if "json" in f["mimeType"] or f["name"].endswith(".json"):
+                # Extrai data do nome do arquivo (fallback caso não tenha no JSON)
+                match_data = re.search(r'\d{4}-\d{2}-\d{2}', f['name'])
+                data_nome_arquivo = match_data.group(0) if match_data else None
 
-                fh.seek(0)
-                data = json.load(fh)
-                
-                # Use a mesma lógica de busca profunda 'encontrar_tables' que discutimos
-                tables = encontrar_tables(data) 
-                if not tables: continue
+                try:
+                    request = service.files().get_media(fileId=f["id"])
+                    fh = io.BytesIO()
+                    downloader = MediaIoBaseDownload(fh, request)
+                    done = False
+                    while not done:
+                        _, done = downloader.next_chunk()
 
-                for table in tables:
-                    if "rows" in table:
-                        df_temp = pd.DataFrame(table["rows"])
-                        # Limpeza de colunas e preenchimento de data conforme seu código
-                        dfs.append(df_temp)
-            except Exception:
-                continue
+                    fh.seek(0)
+                    data_json = json.load(fh)
+                    tables = encontrar_tables(data_json)
+                    
+                    if not tables: continue
 
-    return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
+                    for table in tables:
+                        if "rows" in table and table["rows"]:
+                            df_temp = pd.DataFrame(table["rows"])
+                            
+                            # ✅ CORREÇÃO AQUI: Limpa os nomes das colunas ([Data] -> Data)
+                            df_temp.columns = [limpar_nome_coluna(c) for c in df_temp.columns]
+                            
+                            # Se a coluna Data não veio no JSON, usa a do nome do arquivo
+                            if "Data" not in df_temp.columns and data_nome_arquivo:
+                                df_temp["Data"] = data_nome_arquivo
+                                
+                            dfs.append(df_temp)
+                except Exception:
+                    continue
 
-@st.cache_data(ttl=86400, show_spinner="Consolidando dados... Por favor, aguarde.")
+        return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
+    except Exception as e:
+        st.error(f"Erro na conexão com Drive: {e}")
+        return pd.DataFrame()
+
+# --- CONSOLIDAÇÃO FINAL (Onde o erro acontecia) ---
+
+@st.cache_data(ttl=86400, show_spinner="Consolidando dados finais...")
 def preparar_dataframe_final(folder_id):
-    # 1. Carrega os JSONs do Drive (usa o cache da função original)
+    # 1. Carrega os JSONs (Já limpos e com coluna 'Data' garantida)
     df_raw = carregar_jsons_drive_privado(folder_id)
     
     if df_raw.empty:
         return pd.DataFrame()
 
-    # 2. Carrega a planilha de núcleos
-    df_n = carregar_nucleos_google()
+    # 2. Garante que a coluna 'Data' existe para evitar KeyError
+    if "Data" not in df_raw.columns:
+        # Se mesmo após a limpeza não existir, cria uma coluna vazia
+        df_raw["Data"] = pd.NaT
 
-    # 3. Processamento que antes ficava "solto" e lento
+    # 3. Conversão de tipos
     df_raw["Data"] = pd.to_datetime(df_raw["Data"], errors="coerce")
     
-    # 4. Merge
-    df_final = df_raw.merge(
-        df_n[["Chave", "Nucleo", "Regional", "Setor"]],
-        left_on="Chave2", right_on="Chave", how="left"
-    )
+    # 4. Carrega núcleos e faz o Merge
+    df_n = carregar_nucleos_google()
     
-    # 5. Limpeza de colunas e conversão numérica
-    if "Chave" in df_final.columns:
-        df_final.drop(columns=["Chave"], inplace=True)
-        
-    df_final["Contagem"] = pd.to_numeric(df_final["Contagem"], errors='coerce').astype(float)
+    # Verifica se as colunas de junção existem
+    if "Chave2" in df_raw.columns and "Chave" in df_n.columns:
+        df_final = df_raw.merge(
+            df_n[["Chave", "Nucleo", "Regional", "Setor"]],
+            left_on="Chave2", right_on="Chave", how="left"
+        )
+        if "Chave" in df_final.columns:
+            df_final.drop(columns=["Chave"], inplace=True)
+    else:
+        df_final = df_raw
+
+    # 5. Conversão da Contagem e Mapeamento de Tema
+    if "Contagem" in df_final.columns:
+        df_final["Contagem"] = pd.to_numeric(df_final["Contagem"], errors='coerce').fillna(0)
     
-    # 6. Mapeamento de Tema (usa o INDICADOR_TEMA_MAP que está no seu código)
-    df_final["Tema"] = df_final["Penalidades"].map(INDICADOR_TEMA_MAP).fillna("Outros")
+    if "Penalidades" in df_final.columns:
+        # INDICADOR_TEMA_MAP deve estar definido no seu código globalmente
+        df_final["Tema"] = df_final["Penalidades"].map(INDICADOR_TEMA_MAP).fillna("Outros")
+    else:
+        df_final["Tema"] = "Outros"
     
     return df_final
-
 # ===============================
 # CONFIGURAÇÃO DA PÁGINA
 # ===============================
@@ -894,6 +924,7 @@ for tema in ordem_temas_fixa:
 
 # A tag </div> final do seu arquivo
 st.markdown('</div>', unsafe_allow_html=True)
+
 
 
 
