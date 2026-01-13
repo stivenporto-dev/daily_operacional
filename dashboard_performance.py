@@ -549,6 +549,19 @@ if setor_sel: df_filt = df_filt[df_filt["Setor"].isin(setor_sel)]
 if df_filt.empty:
     st.warning("⚠️ Nenhum dado encontrado para os filtros selecionados.")
     st.stop()
+try:
+    filter_tuple = (
+        str(tema_sel), 
+        str(penalidades_sel), 
+        str(regional_sel), 
+        str(nucleo_sel), 
+        str(setor_sel), 
+        str(start_date), 
+        str(end_date)
+    )
+    filter_hash = str(hash(filter_tuple))
+except Exception:
+    filter_hash = "static_hash_fallback"    
 # ===============================
 # METAS DINÂMICAS
 # ===============================
@@ -903,6 +916,7 @@ for tema in ordem_temas_fixa:
 
 # A tag </div> final do seu arquivo
 st.markdown('</div>', unsafe_allow_html=True)
+
 
 
 
