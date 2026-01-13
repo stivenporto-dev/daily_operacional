@@ -31,7 +31,7 @@ def encontrar_tables(obj):
             if resultado: return resultado
     return None
 
-@st.cache_data(ttl=3600, show_spinner="Consolidando JSONs do Drive...")
+@st.cache_data(ttl=3600, show_spinner="Aguarde enquanto os dados estão sendo carregados...")
 def carregar_jsons_drive_privado(folder_id):
     env_name = "GOOGLE_APPLICATION_CREDENTIALS_JSON"
     if env_name not in os.environ:
@@ -906,6 +906,7 @@ for tema in ordem_temas_fixa:
 
 # A tag </div> final do seu arquivo
 st.markdown('</div>', unsafe_allow_html=True)
+
 
 
 
