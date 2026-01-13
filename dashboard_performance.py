@@ -10,72 +10,103 @@ import os  # <--- FALTAVA ISSO
 from google.oauth2 import service_account  # <--- FALTAVA ISSO
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
+import re # Adicione no topo do arquivo junto com os outros imports
 
-@st.cache_data(ttl=3600, show_spinner="Buscando dados no Drive...")
+def limpar_nome_coluna(coluna):
+    # Procura por texto dentro de colchetes: [Nome] -> Nome
+    match = re.search(r'\[(.*?)\]', str(coluna))
+    return match.group(1) if match else str(coluna)
+
+def encontrar_tables(obj):
+    # Busca recursiva pela chave 'tables' (igual ao seu encontrarTables em JS)
+    if isinstance(obj, dict):
+        if 'tables' in obj and isinstance(obj['tables'], list):
+            return obj['tables']
+        for key, value in obj.items():
+            resultado = encontrar_tables(value)
+            if resultado: return resultado
+    elif isinstance(obj, list):
+        for item in obj:
+            resultado = encontrar_tables(item)
+            if resultado: return resultado
+    return None
+
+@st.cache_data(ttl=3600, show_spinner="Consolidando JSONs do Drive...")
 def carregar_jsons_drive_privado(folder_id):
     env_name = "GOOGLE_APPLICATION_CREDENTIALS_JSON"
-
     if env_name not in os.environ:
-        st.error(f"Erro: Variável {env_name} não encontrada no Render.")
+        st.error(f"Erro: Variável {env_name} não encontrada.")
         return pd.DataFrame()
 
-    try:
-        service_account_info = json.loads(os.environ[env_name])
-        creds = service_account.Credentials.from_service_account_info(
-            service_account_info,
-            scopes=["https://www.googleapis.com/auth/drive.readonly"]
-        )
-        service = build("drive", "v3", credentials=creds)
+    service_account_info = json.loads(os.environ[env_name])
+    creds = service_account.Credentials.from_service_account_info(
+        service_account_info,
+        scopes=["https://www.googleapis.com/auth/drive.readonly"]
+    )
+    service = build("drive", "v3", credentials=creds)
 
-        # 🔍 MODO DEBUG: Tirei o filtro de JSON para ver tudo o que tem lá
-        results = service.files().list(
-            q=f"'{folder_id}' in parents",
-            fields="files(id, name, mimeType)",
-            pageSize=100
-        ).execute()
-        
-        files = results.get("files", [])
-        
-        # Mostra na tela o que encontrou (para você ver se aparece algo)
-        if not files:
-            st.warning(f"A pasta {folder_id} parece vazia para o sistema. Verifique o compartilhamento com o email: {service_account_info.get('client_email')}")
-            return pd.DataFrame()
-        else:
-            st.info(f"Encontrei {len(files)} arquivos. O primeiro é: {files[0]['name']} ({files[0]['mimeType']})")
-
-        dfs = []
-        for f in files:
-            # Só tenta ler se parecer um JSON ou texto
-            if "json" in f["mimeType"] or f["name"].endswith(".json"):
-                try:
-                    request = service.files().get_media(fileId=f["id"])
-                    fh = io.BytesIO()
-                    downloader = MediaIoBaseDownload(fh, request)
-                    done = False
-                    while not done:
-                        _, done = downloader.next_chunk()
-
-                    fh.seek(0)
-                    data = json.load(fh)
-
-                    rows = []
-                    if "tables" in data:
-                        for t in data["tables"]:
-                            rows.extend(t.get("rows", []))
-                    
-                    if rows:
-                        df = pd.DataFrame(rows)
-                        COLUNAS = ["Data", "Penalidades", "Contagem", "Programa", "Chave2", "Mes"]
-                        df = df[[c for c in COLUNAS if c in df.columns]]
-                        dfs.append(df)
-                except Exception as e:
-                    st.warning(f"Erro ao ler arquivo {f['name']}: {e}")
-
-        return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
-
-    except Exception as e:
-        st.error(f"Erro geral na conexão: {e}")
+    # 1. Lista todos os arquivos da pasta para pegar a data do nome do arquivo
+    results = service.files().list(
+        q=f"'{folder_id}' in parents",
+        fields="files(id, name)",
+        pageSize=1000
+    ).execute()
+    
+    files = results.get("files", [])
+    if not files:
+        st.warning("Nenhum arquivo encontrado na pasta do Drive. Verifique as permissões.")
         return pd.DataFrame()
+
+    dfs = []
+    COLUNAS_DESEJADAS = ['Penalidades', 'Contagem', 'Mes', 'PontuacaoFinal', 'Programa', 'Chave2', 'Data']
+
+    for f in files:
+        # Pega a data do nome do arquivo (ex: 2024-05-10) para preencher a coluna 'Data'
+        match_data = re.search(r'\d{4}-\d{2}-\d{2}', f['name'])
+        data_arquivo = match_data.group(0) if match_data else None
+
+        try:
+            request = service.files().get_media(fileId=f["id"])
+            fh = io.BytesIO()
+            downloader = MediaIoBaseDownload(fh, request)
+            done = False
+            while not done:
+                _, done = downloader.next_chunk()
+            
+            fh.seek(0)
+            conteudo_json = json.load(fh)
+            
+            tables = encontrar_tables(conteudo_json)
+            if not tables: continue
+
+            for table in tables:
+                rows = table.get('rows', [])
+                if not rows: continue
+
+                # Transforma a lista de linhas em DataFrame
+                df_temp = pd.DataFrame(rows)
+
+                # Limpa os nomes das colunas: [Penalidades] -> Penalidades
+                df_temp.columns = [limpar_nome_coluna(c) for c in df_temp.columns]
+
+                # Filtra apenas colunas que queremos e existem no arquivo
+                colunas_presentes = [c for c in COLUNAS_DESEJADAS if c in df_temp.columns]
+                df_temp = df_temp[colunas_presentes]
+
+                # Se não havia coluna 'Data' dentro do JSON, usa a data do nome do arquivo
+                if 'Data' not in df_temp.columns and data_arquivo:
+                    df_temp['Data'] = data_arquivo
+
+                dfs.append(df_temp)
+
+        except Exception as e:
+            st.warning(f"Erro ao processar arquivo {f['name']}: {e}")
+
+    if not dfs:
+        st.error("Nenhum dado válido extraído dos JSONs.")
+        return pd.DataFrame()
+
+    return pd.concat(dfs, ignore_index=True)
 # ===============================
 # CONFIGURAÇÃO DA PÁGINA
 # ===============================
@@ -873,4 +904,5 @@ for tema in ordem_temas_fixa:
 
 # A tag </div> final do seu arquivo
 st.markdown('</div>', unsafe_allow_html=True)
+
 
