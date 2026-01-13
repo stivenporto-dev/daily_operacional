@@ -481,29 +481,44 @@ TEMA_ICONE_MAP = {
 }
 
 # ===============================
-# SIDEBAR - FILTROS DE DATA PRIMEIRO
+# SIDEBAR - SELETOR DE MÊS (DAILY)
 # ===============================
 with st.sidebar:
-    st.header("🔍 Filtros de Período")
-    col_data1, col_data2 = st.columns(2)
-    with col_data1:
-        # Define as datas que serão usadas para BUSCAR no Drive
-        start_date = st.date_input("Início", date.today() - timedelta(days=7))
-    with col_data2:
-        end_date = st.date_input("Fim", date.today())
+    st.header("🔍 Período de Análise")
+    
+    hoje = date.today()
+    # Definimos um início padrão (1 ano atrás)
+    data_inicio_historico = hoje - relativedelta(years=1)
+    
+    # Geramos o mapa de períodos
+    period_map = generate_monthly_periods(data_inicio_historico, hoje, hoje)
+    
+    if period_map:
+        period_labels = list(period_map.keys())
+        periodo_selecionado = st.selectbox(
+            "Selecione o Mês", 
+            options=period_labels, 
+            index=len(period_labels) - 1
+        )
+        
+        # Aqui o código define as datas baseadas no mês escolhido
+        start_date, end_date = period_map[periodo_selecionado]
+        st.caption(f"Período: **{start_date.strftime('%d/%m/%Y')}** a **{end_date.strftime('%d/%m/%Y')}**")
+    else:
+        st.error("Não foi possível gerar a lista de meses.")
+        st.stop()
 
 # ===============================
-# CARREGAR DADOS (CHAMADA ÚNICA E INTELIGENTE)
+# CARREGAR DADOS (CHAMADA ÚNICA COM AS DATAS DO MÊS)
 # ===============================
 ID_PASTA_DRIVE = "1kQ0Hs1A_6JKUOXleBScT1C1ehpWM5_Vp"
 
-# Chamada ÚNICA com as datas. Isso evita carregar tudo e depois filtrar.
+# A função recebe as datas geradas pelo seletor de mês acima
 df_merged = preparar_dataframe_final(ID_PASTA_DRIVE, start_date, end_date)
 
 if df_merged.empty:
-    st.warning("Nenhum dado encontrado para as datas selecionadas.")
+    st.warning("Nenhum dado encontrado para o mês selecionado.")
     st.stop()
-
 # ===============================
 # PREPARAR DATAFRAME DE EXIBIÇÃO
 # ===============================
@@ -916,6 +931,7 @@ for tema in ordem_temas_fixa:
 
 # A tag </div> final do seu arquivo
 st.markdown('</div>', unsafe_allow_html=True)
+
 
 
 
