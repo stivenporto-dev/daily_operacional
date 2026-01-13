@@ -443,6 +443,8 @@ try:
     if df_daily.empty:
         st.error("Erro: Nenhum arquivo JSON encontrado na pasta do Drive.")
         st.stop()
+    
+    df_daily["Data"] = pd.to_datetime(df_daily["Data"], errors="coerce")
 
     # O restante do processamento (Merge com núcleos) continua igual
     df_merged = df_daily.merge(
@@ -904,5 +906,6 @@ for tema in ordem_temas_fixa:
 
 # A tag </div> final do seu arquivo
 st.markdown('</div>', unsafe_allow_html=True)
+
 
 
