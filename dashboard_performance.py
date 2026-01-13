@@ -265,7 +265,7 @@ DECIMAIS_LIST = {"NotaConducao", "EventosExcessos", "BaixaConducao", "Excessos N
 MOEDA_LIST = {"MultasRegulatorias", "Multas Transito"}
 # Lista de indicadores onde "MENOR é MELHOR" (Exceder a meta é ruim/vermelho)
 LOWER_IS_BETTER_LIST = {"BaixaConducao%", "MultasRegulatorias", "DocsPendentes", "DocsVencidBloq",
-                        "Reclamacoes", "Acidentes", "VPML", "EventosExcessos"}
+                        "Reclamacoes", "Acidentes", "VPML", "EventosExcessos", "Excessos Não Identificados", "Multas Transito", "%DesviodeEscala"}
 
 
 def calcular_acum_ultimo_dia(df, penalidade):
@@ -401,11 +401,11 @@ INDICADOR_TEMA_MAP = {
     "PenalMultastransito": "Multas de Trânsito",
     "MetaTransito%": "Multas de Trânsito",
     "MetaMultastransito": "Multas de Trânsito",
-    "Excessos Não Identificados": "Excessos Não Identificados",
+    "Excessos Não Identificados": "Excessos de Velocidade",
     "PenalExcessosNãoIdentificados": "Excessos de Velocidade",
-    "Deslocamento%": "Deslocamento Identificado",
+    "Deslocamento%": "Identificação de Condutor",
     "PenalDeslocamento": "Identificação de Condutor",
-    "%DesviodeEscala": "Desvio de Escala Programada",
+    "%DesviodeEscala": "Escala de Tripulantes - OPTZ",
     "PenalDesviodeEscala": "Escala de Tripulantes - OPTZ",
 }
 
@@ -906,6 +906,7 @@ for tema in ordem_temas_fixa:
 
 # A tag </div> final do seu arquivo
 st.markdown('</div>', unsafe_allow_html=True)
+
 
 
 
