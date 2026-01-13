@@ -3,4 +3,6 @@ pandas==2.2.3
 streamlit-aggrid==1.2.0.post1 
 python-dateutil==2.9.0.post0
 openpyxl
+google-auth
+google-api-python-client
 
