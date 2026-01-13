@@ -12,7 +12,9 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 import re # Adicione no topo do arquivo junto com os outros imports
 
-# --- FUNÇÕES DE APOIO ---
+# ===============================
+# FUNÇÕES DE APOIO
+# ===============================
 
 def limpar_nome_coluna(coluna):
     """Remove colchetes dos nomes das colunas: [Data] -> Data"""
@@ -20,7 +22,7 @@ def limpar_nome_coluna(coluna):
     return match.group(1) if match else str(coluna)
 
 def encontrar_tables(obj):
-    """Busca recursiva pela chave 'tables' no JSON"""
+    """Busca recursiva pela chave 'tables' no JSON (igual ao JS)"""
     if isinstance(obj, dict):
         if 'tables' in obj and isinstance(obj['tables'], list):
             return obj['tables']
@@ -33,13 +35,15 @@ def encontrar_tables(obj):
             if resultado: return resultado
     return None
 
-# --- CARREGAMENTO DO DRIVE ---
+# ===============================
+# CARREGAMENTO DO DRIVE (FILTRADO)
+# ===============================
 
-@st.cache_data(ttl=86400, show_spinner="Buscando JSONs no Drive...")
-def carregar_jsons_drive_privado(folder_id):
+@st.cache_data(ttl=86400, show_spinner="Buscando arquivos no Drive...")
+def carregar_jsons_drive_privado(folder_id, data_inicio, data_fim):
     env_name = "GOOGLE_APPLICATION_CREDENTIALS_JSON"
     if env_name not in os.environ:
-        st.error("Variável de ambiente das credenciais não encontrada.")
+        st.error("Configuração de credenciais (JSON) não encontrada.")
         return pd.DataFrame()
 
     try:
@@ -50,22 +54,32 @@ def carregar_jsons_drive_privado(folder_id):
         )
         service = build("drive", "v3", credentials=creds)
 
+        # Listar arquivos (pageSize aumentado para cobrir mais histórico e filtrar via código)
         results = service.files().list(
             q=f"'{folder_id}' in parents and trashed = false",
             fields="files(id, name, mimeType)",
             orderBy="modifiedTime desc",
-            pageSize=100 
+            pageSize=1000 
         ).execute()
         
         files = results.get("files", [])
         dfs = []
 
-        for f in files:
-            if "json" in f["mimeType"] or f["name"].endswith(".json"):
-                # Extrai data do nome do arquivo (fallback caso não tenha no JSON)
-                match_data = re.search(r'\d{4}-\d{2}-\d{2}', f['name'])
-                data_nome_arquivo = match_data.group(0) if match_data else None
+        # Converter datas de entrada para comparação
+        t_inicio = pd.to_datetime(data_inicio)
+        t_fim = pd.to_datetime(data_fim)
 
+        for f in files:
+            if not f["name"].endswith(".json"): continue
+            
+            # 1. Extrai data do nome do arquivo para filtro preventivo
+            match_data = re.search(r'\d{4}-\d{2}-\d{2}', f['name'])
+            if not match_data: continue
+            
+            dt_arquivo = pd.to_datetime(match_data.group(0))
+
+            # 2. SÓ BAIXA SE ESTIVER DENTRO DO RANGE SELECIONADO (Otimização Real)
+            if t_inicio <= dt_arquivo <= t_fim:
                 try:
                     request = service.files().get_media(fileId=f["id"])
                     fh = io.BytesIO()
@@ -83,13 +97,12 @@ def carregar_jsons_drive_privado(folder_id):
                     for table in tables:
                         if "rows" in table and table["rows"]:
                             df_temp = pd.DataFrame(table["rows"])
-                            
-                            # ✅ CORREÇÃO AQUI: Limpa os nomes das colunas ([Data] -> Data)
+                            # Limpa nomes de colunas: [Data] -> Data
                             df_temp.columns = [limpar_nome_coluna(c) for c in df_temp.columns]
                             
-                            # Se a coluna Data não veio no JSON, usa a do nome do arquivo
-                            if "Data" not in df_temp.columns and data_nome_arquivo:
-                                df_temp["Data"] = data_nome_arquivo
+                            # Se não tiver coluna data dentro, injeta a data do nome do arquivo
+                            if "Data" not in df_temp.columns:
+                                df_temp["Data"] = dt_arquivo
                                 
                             dfs.append(df_temp)
                 except Exception:
@@ -100,28 +113,28 @@ def carregar_jsons_drive_privado(folder_id):
         st.error(f"Erro na conexão com Drive: {e}")
         return pd.DataFrame()
 
-# --- CONSOLIDAÇÃO FINAL (Onde o erro acontecia) ---
+# ===============================
+# CONSOLIDAÇÃO FINAL (CHAMADA ÚNICA)
+# ===============================
 
 @st.cache_data(ttl=86400, show_spinner="Consolidando dados finais...")
-def preparar_dataframe_final(folder_id):
-    # 1. Carrega os JSONs (Já limpos e com coluna 'Data' garantida)
-    df_raw = carregar_jsons_drive_privado(folder_id)
+def preparar_dataframe_final(folder_id, data_inicio, data_fim):
+    # Passamos as datas para a função de carga filtrar o download
+    df_raw = carregar_jsons_drive_privado(folder_id, data_inicio, data_fim)
     
     if df_raw.empty:
         return pd.DataFrame()
 
-    # 2. Garante que a coluna 'Data' existe para evitar KeyError
+    # Garantia contra KeyError: 'Data'
     if "Data" not in df_raw.columns:
-        # Se mesmo após a limpeza não existir, cria uma coluna vazia
         df_raw["Data"] = pd.NaT
 
-    # 3. Conversão de tipos
     df_raw["Data"] = pd.to_datetime(df_raw["Data"], errors="coerce")
     
-    # 4. Carrega núcleos e faz o Merge
+    # Busca planilha de núcleos
     df_n = carregar_nucleos_google()
     
-    # Verifica se as colunas de junção existem
+    # Merge Inteligente
     if "Chave2" in df_raw.columns and "Chave" in df_n.columns:
         df_final = df_raw.merge(
             df_n[["Chave", "Nucleo", "Regional", "Setor"]],
@@ -132,17 +145,18 @@ def preparar_dataframe_final(folder_id):
     else:
         df_final = df_raw
 
-    # 5. Conversão da Contagem e Mapeamento de Tema
+    # Conversão de Contagem
     if "Contagem" in df_final.columns:
         df_final["Contagem"] = pd.to_numeric(df_final["Contagem"], errors='coerce').fillna(0)
     
+    # Mapeamento de Tema
     if "Penalidades" in df_final.columns:
-        # INDICADOR_TEMA_MAP deve estar definido no seu código globalmente
         df_final["Tema"] = df_final["Penalidades"].map(INDICADOR_TEMA_MAP).fillna("Outros")
     else:
         df_final["Tema"] = "Outros"
     
     return df_final
+
 # ===============================
 # CONFIGURAÇÃO DA PÁGINA
 # ===============================
@@ -467,109 +481,74 @@ TEMA_ICONE_MAP = {
 }
 
 # ===============================
-# CARREGAR DADOS (CENTRALIZADO COM CACHE)
+# SIDEBAR - FILTROS DE DATA PRIMEIRO
+# ===============================
+with st.sidebar:
+    st.header("🔍 Filtros de Período")
+    col_data1, col_data2 = st.columns(2)
+    with col_data1:
+        # Define as datas que serão usadas para BUSCAR no Drive
+        start_date = st.date_input("Início", date.today() - timedelta(days=7))
+    with col_data2:
+        end_date = st.date_input("Fim", date.today())
+
+# ===============================
+# CARREGAR DADOS (CHAMADA ÚNICA E INTELIGENTE)
 # ===============================
 ID_PASTA_DRIVE = "1kQ0Hs1A_6JKUOXleBScT1C1ehpWM5_Vp"
 
-# Agora chamamos a função unificada
-df_merged = preparar_dataframe_final(ID_PASTA_DRIVE)
+# Chamada ÚNICA com as datas. Isso evita carregar tudo e depois filtrar.
+df_merged = preparar_dataframe_final(ID_PASTA_DRIVE, start_date, end_date)
 
 if df_merged.empty:
-    st.error("Erro: Nenhum dado disponível ou falha na conexão com o Drive.")
+    st.warning("Nenhum dado encontrado para as datas selecionadas.")
     st.stop()
+
 # ===============================
-# FILTROS
+# PREPARAR DATAFRAME DE EXIBIÇÃO
 # ===============================
 penalidades_ocultas = {
     "Meta VPML", "MetaReclamacoes", "MetaAcidentes", "MetaMultasReg",
     "MetaAcid%", "VPML%", "MetaReg%", "MetaRecl%", "ViagensProg",
     "MotsAtivos", "KmRodado", "Vendas", "BaixaConducao", "MetaTransito%", "Meta_MultasTransito"
 }
+
+# Criamos o df_exib a partir do que foi carregado no período
 df_exib = df_merged[~df_merged["Penalidades"].str.startswith("Penal", na=False)]
 df_exib = df_exib[~df_exib["Penalidades"].isin(penalidades_ocultas)]
 df_exib["Setor"] = df_exib["Setor"].fillna("-")
 
+# ===============================
+# CONTINUAÇÃO DOS FILTROS NA SIDEBAR
+# ===============================
 with st.sidebar:
-    st.header("🔍 Filtros")
-    if df_exib.empty:
-        st.warning("Nenhum dado disponível para filtros.")
-        st.stop()
-
     temas_visiveis = sorted(df_exib["Tema"].dropna().unique())
-    # Adicione o parâmetro placeholder em cada multiselect
-    tema_sel = st.multiselect(
-        "Tema",
-        temas_visiveis,
-        key="tema_sel_key",
-        placeholder="Selecione uma opção"
-    )
+    tema_sel = st.multiselect("Tema", temas_visiveis, placeholder="Selecione uma opção")
 
     penalidades_visiveis = sorted(df_exib["Penalidades"].dropna().unique())
-    penalidades_sel = st.multiselect(
-        "Penalidades",
-        penalidades_visiveis,
-        key="penalidades_sel_key",
-        placeholder="Selecione uma opção"
-    )
+    penalidades_sel = st.multiselect("Penalidades", penalidades_visiveis, placeholder="Selecione uma opção")
 
-    regional_sel = st.multiselect(
-        "Regional",
-        sorted(df_exib["Regional"].dropna().unique()),
-        key="regional_sel_key",
-        placeholder="Selecione uma opção"
-    )
+    regional_sel = st.multiselect("Regional", sorted(df_exib["Regional"].dropna().unique()), placeholder="Selecione uma opção")
 
-    nucleo_sel = st.multiselect(
-        "Núcleo",
-        sorted(df_exib["Nucleo"].dropna().unique()),
-        key="nucleo_sel_key",
-        placeholder="Selecione uma opção"
-    )
+    nucleo_sel = st.multiselect("Núcleo", sorted(df_exib["Nucleo"].dropna().unique()), placeholder="Selecione uma opção")
 
-    setor_sel = st.multiselect(
-        "Setor",
-        sorted(df_exib["Setor"].dropna().unique()),
-        key="setor_sel_key",
-        placeholder="Selecione uma opção"
-    )
-    try:
-        min_data_dt = df_exib["Data"].min().to_pydatetime()
-        min_period_date = min_data_dt.date()
-        max_data_date = df_exib["Data"].max().to_pydatetime().date()
-        period_map = generate_monthly_periods(min_period_date, hoje, max_data_date)
-        if not period_map:
-            st.warning("⚠️ Não foi possível gerar os períodos mensais.")
-            st.stop()
-        period_labels = list(period_map.keys())
-        default_index = len(period_labels) - 1
-        periodo_sel = st.selectbox("Selecione o Período", options=period_labels, index=default_index,
-                                   key="periodo_sel_key")
-        start_date, end_date = period_map[periodo_sel]
-        st.caption(f"De: **{start_date.strftime('%d/%m/%Y')}** a **{end_date.strftime('%d/%m/%Y')}**")
-    except Exception as e:
-        st.error(f"Erro ao processar datas: {e}")
-        start_date, end_date = date(1900, 1, 1), date(1900, 1, 1)
+    setor_sel = st.multiselect("Setor", sorted(df_exib["Setor"].dropna().unique()), placeholder="Selecione uma opção")
 
-try:
-    # Convertemos para string para garantir estabilidade do hash
-    filter_tuple = (
-        str(tema_sel), str(penalidades_sel), str(regional_sel), str(nucleo_sel), str(setor_sel), str(periodo_sel))
-    filter_hash = hash(filter_tuple)
-except:
-    filter_hash = "static_hash_fallback"  # Valor fixo para não quebrar a renderização
-
+# ===============================
+# APLICAÇÃO DOS FILTROS NO DATAFRAME FINAL
+# ===============================
 df_filt = df_exib.copy()
 if tema_sel: df_filt = df_filt[df_filt["Tema"].isin(tema_sel)]
 if penalidades_sel: df_filt = df_filt[df_filt["Penalidades"].isin(penalidades_sel)]
 if nucleo_sel: df_filt = df_filt[df_filt["Nucleo"].isin(nucleo_sel)]
 if regional_sel: df_filt = df_filt[df_filt["Regional"].isin(regional_sel)]
 if setor_sel: df_filt = df_filt[df_filt["Setor"].isin(setor_sel)]
-df_filt = df_filt[(df_filt["Data"].dt.date >= start_date) & (df_filt["Data"].dt.date <= end_date)]
 
-if df_filt.empty or df_filt["Penalidades"].dropna().empty:
-    st.warning("⚠️ Nenhum dado encontrado para os filtros e período selecionados.")
+# Não precisa filtrar data de novo aqui, pois a função preparar_dataframe_final já trouxe apenas o período certo!
+
+if df_filt.empty:
+    st.warning("⚠️ Nenhum dado encontrado para os filtros selecionados.")
     st.stop()
-
 # ===============================
 # METAS DINÂMICAS
 # ===============================
@@ -924,6 +903,7 @@ for tema in ordem_temas_fixa:
 
 # A tag </div> final do seu arquivo
 st.markdown('</div>', unsafe_allow_html=True)
+
 
 
 
