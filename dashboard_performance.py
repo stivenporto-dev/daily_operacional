@@ -5,7 +5,66 @@ from datetime import date, timedelta, datetime
 from dateutil.relativedelta import relativedelta
 import math
 import json
+import io
+import os  # <--- FALTAVA ISSO
+from google.oauth2 import service_account  # <--- FALTAVA ISSO
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseDownload
 
+@st.cache_data(ttl=3600, show_spinner="Buscando dados no Drive...")
+def carregar_jsons_drive_privado(folder_id):
+    # 🔐 Pega a credencial que você salvou no Render
+    # Certifique-se que o nome aqui seja o mesmo que você colocou na "Key" do Render
+    env_name = "GOOGLE_APPLICATION_CREDENTIALS_JSON"
+
+    if env_name not in os.environ:
+        st.error(f"Erro: Variável {env_name} não encontrada no Render.")
+        return pd.DataFrame()
+
+    service_account_info = json.loads(os.environ[env_name])
+
+    creds = service_account.Credentials.from_service_account_info(
+        service_account_info,
+        scopes=["https://www.googleapis.com/auth/drive.readonly"]
+    )
+
+    service = build("drive", "v3", credentials=creds)
+
+    # Lista arquivos JSON na pasta
+    results = service.files().list(
+        q=f"'{folder_id}' in parents and mimeType='application/json'",
+        fields="files(id,name)",
+        pageSize=1000
+    ).execute()
+
+    files = results.get("files", [])
+    dfs = []
+
+    for f in files:
+        request = service.files().get_media(fileId=f["id"])
+        fh = io.BytesIO()
+        downloader = MediaIoBaseDownload(fh, request)
+        done = False
+        while not done:
+            _, done = downloader.next_chunk()
+
+        fh.seek(0)
+        data = json.load(fh)
+
+        # Extração dos dados conforme seu formato
+        rows = []
+        if "tables" in data:
+            for t in data["tables"]:
+                rows.extend(t.get("rows", []))
+
+        if rows:
+            df = pd.DataFrame(rows)
+            # Filtro de colunas para economizar memória
+            COLUNAS = ["Data", "Penalidades", "Contagem", "Programa", "Chave2", "Mes"]
+            df = df[[c for c in COLUNAS if c in df.columns]]
+            dfs.append(df)
+
+    return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 # ===============================
 # CONFIGURAÇÃO DA PÁGINA
 # ===============================
@@ -221,7 +280,7 @@ def get_dot_color(penalidade, acum, meta):
         elif acum_val == meta_val:
             return "🟡"
         else:
-            return "🔴"    
+            return "🔴"
 
 
 nome_indicador = {
@@ -297,15 +356,15 @@ INDICADOR_TEMA_MAP = {
     "ViagensProg": "Geral",
     "Vendas": "Geral",
     "Multas Transito": "Multas de Trânsito",
-    "PenalMultastransito": "Multas de Trânsito"
-    "MetaTransito%": "Multas de Trânsito"
-    "MetaMultastransito": "Multas de Trânsito"
+    "PenalMultastransito": "Multas de Trânsito",
+    "MetaTransito%": "Multas de Trânsito",
+    "MetaMultastransito": "Multas de Trânsito",
     "Excessos Não Identificados": "Excessos Não Identificados",
-    "PenalExcessosNãoIdentificados": "Excessos de Velocidade"
+    "PenalExcessosNãoIdentificados": "Excessos de Velocidade",
     "Deslocamento%": "Deslocamento Identificado",
-    "PenalDeslocamento": "Identificação de Condutor"
+    "PenalDeslocamento": "Identificação de Condutor",
     "%DesviodeEscala": "Desvio de Escala Programada",
-    "PenalDesviodeEscala": "Escala de Tripulantes - OPTZ"
+    "PenalDesviodeEscala": "Escala de Tripulantes - OPTZ",
 }
 
 # =======================================================
@@ -330,18 +389,20 @@ TEMA_ICONE_MAP = {
 }
 
 # ===============================
-# CARREGAR DADOS
+# CARREGAR DADOS (APENAS DRIVE PRIVADO)
 # ===============================
 try:
     df_nucleos = carregar_nucleos_google()
-    url_base = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQt4btv46n1B98NZscSD8hz78_x2mUHlKWnXe3z4mL1vJWeymx4RMgoV58N4OLV2sG2U_GBj5AcTGVQ/"
-    gids = ["0", "1688682064", "1552712710","363880417"]
-    df_daily = carregar_daily_google(gids, url_base)
 
-    if df_daily.empty or df_nucleos.empty:
-        st.error("Erro: Dados não puderam ser carregados. Verifique as fontes.")
+    # Busca apenas os JSONs da pasta privada
+    ID_PASTA_DRIVE = "1kQ0Hs1A_6JKUOXleBScT1C1ehpWM5_Vp"
+    df_daily = carregar_jsons_drive_privado(ID_PASTA_DRIVE)
+
+    if df_daily.empty:
+        st.error("Erro: Nenhum arquivo JSON encontrado na pasta do Drive.")
         st.stop()
 
+    # O restante do processamento (Merge com núcleos) continua igual
     df_merged = df_daily.merge(
         df_nucleos[["Chave", "Nucleo", "Regional", "Setor"]],
         left_on="Chave2", right_on="Chave", how="left"
@@ -577,7 +638,7 @@ for tema in ordem_temas_fixa:
                     "Pontual%": 0.8, "ControleEmbarque": 0.95, "AcadDDS": 0.98, "AcadFixo": 0.9,
                     "BaixaConducao%": 0.1, "DocsPendentes": 0, "DocsVencidBloq": 0,
                     "EventosExcessos": 0.02, "Identificacao%": 0.98, "TripulacaoEscalada%": 0.96,
-                    "NotaConducao": 70.0, "Deslocamento%": 0.90, "%DesviodeEscala": 0.15, "Excessos Não Identificados": 0.25 
+                    "NotaConducao": 70.0, "Deslocamento%": 0.90, "%DesviodeEscala": 0.15, "Excessos Não Identificados": 0.25
                 }
                 df_data_raw["Meta"] = metas_fixas.get(pen, pd.NA)
 
@@ -801,4 +862,3 @@ for tema in ordem_temas_fixa:
 
 # A tag </div> final do seu arquivo
 st.markdown('</div>', unsafe_allow_html=True)
-
