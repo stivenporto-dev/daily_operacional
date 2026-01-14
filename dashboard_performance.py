@@ -147,7 +147,8 @@ def preparar_dataframe_final(folder_id, data_inicio, data_fim):
 
     # Conversão de Contagem
     if "Contagem" in df_final.columns:
-        df_final["Contagem"] = pd.to_numeric(df_final["Contagem"], errors='coerce').fillna(0)
+        # MUDANÇA AQUI: Removemos o .fillna(0) para manter NaNs onde não tem dados
+        df_final["Contagem"] = pd.to_numeric(df_final["Contagem"], errors='coerce')
     
     # Mapeamento de Tema
     if "Penalidades" in df_final.columns:
@@ -662,14 +663,33 @@ for tema in ordem_temas_fixa:
         # Loop para CADA INDICADOR
         for i, pen in enumerate(indicadores_do_tema):
 
-            # --- A LÓGICA DE PREPARAÇÃO DE DADOS COMEÇA AQUI ---
-            # (Exatamente como estava no seu código original)
-
             sub = df_filt[df_filt["Penalidades"] == pen].copy()
             if sub.empty: continue
 
-            aggfunc = "mean" if pen in penalidades_media else "sum"
+            # ============================================================
+            # LÓGICA DE TRATAMENTO DE NULOS (SOLUÇÃO DO PROBLEMA)
+            # ============================================================
+            # Regra:
+            # 1. Se for Média de Porcentagem (ex: VPML%):
+            #    NÃO preencher com 0. O NaN será ignorado no cálculo da média (pivot_table).
+            # 2. Se for Média de Inteiros/Decimais (ex: EventosExcessos) OU Soma:
+            #    Preencher NaN com 0, pois ausência de dado significa "0 ocorrências".
+            
+            eh_media = pen in penalidades_media
+            eh_percentual = pen in PERCENTUAIS_LIST
+
+            if eh_media and eh_percentual:
+                # Mantém NaN na coluna Contagem para não derrubar a média
+                pass 
+            else:
+                # Para Somas ou Médias de contagem (como EventosExcessos), vazio = 0
+                sub["Contagem"] = sub["Contagem"].fillna(0)
+
+            # Define a função de agregação
+            aggfunc = "mean" if eh_media else "sum"
+
             try:
+                # O parâmetro dropna=True (padrão) do pivot_table já ignora NaNs nas médias
                 pivot = sub.pivot_table(
                     index=["Regional", "Nucleo", "Setor"],
                     columns="Data", values="Contagem", aggfunc=aggfunc, fill_value=pd.NA
@@ -931,6 +951,7 @@ for tema in ordem_temas_fixa:
 
 # A tag </div> final do seu arquivo
 st.markdown('</div>', unsafe_allow_html=True)
+
 
 
 
